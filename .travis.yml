@@ -1,0 +1,5 @@
+language: java
+deploy:
+  provider: heroku
+  api_key: c0a9049f-873c-4290-bd14-6a8146a412ff
+  app: mmariska-test1
