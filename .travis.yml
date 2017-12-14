@@ -13,7 +13,7 @@ deploy:
 before_install:
  - chmod +x gradlew
 after_success:
-  - docker login -u "$DOCKER_USERNAME" -p "$DOCKER_PASSWORD"
+  - docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
   - export REPO=mariskamartin/spring-demo2
   - export TAG=`if [ "$TRAVIS_BRANCH" == "master" ]; then echo "latest"; else echo $TRAVIS_BRANCH ; fi`
 #  - docker build -f Dockerfile -t $REPO:$COMMIT .
