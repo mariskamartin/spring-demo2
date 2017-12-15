@@ -5,6 +5,7 @@ language: java
 env:
   global:
     - COMMIT=${TRAVIS_COMMIT::8}
+    #not used
     #DOCKER_EMAIL, DOCKER_USER, DOCKER_PASS are added via web interface (settings)
 deploy:
   provider: heroku
@@ -18,7 +19,6 @@ after_success:
   - export TAG=`if [ "$TRAVIS_BRANCH" == "master" ]; then echo "latest"; else echo $TRAVIS_BRANCH ; fi`
 #  - docker build -f Dockerfile -t $REPO:$COMMIT .
   - ./gradlew build docker
-  - docker tag $REPO:$COMMIT $REPO:$TAG
-  - docker tag $REPO:$COMMIT $REPO:travis-$TRAVIS_BUILD_NUMBER
-  - docker push $REPO
+  - docker tag $REPO:latest $REPO:$TAG
+  - docker push $REPO:$TAG
   - docker logout
