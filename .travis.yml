@@ -7,10 +7,12 @@ env:
     - COMMIT=${TRAVIS_COMMIT::8}
     #not used
     #DOCKER_EMAIL, DOCKER_USER, DOCKER_PASS are added via web interface (settings)
+
 deploy:
   provider: heroku
   api_key: c0a9049f-873c-4290-bd14-6a8146a412ff
   app: mmariska-test1
+
 before_install:
  - chmod +x gradlew
 after_success:
@@ -22,3 +24,11 @@ after_success:
   - docker tag $REPO:latest $REPO:$TAG
   - docker push $REPO:$TAG
   - docker logout
+
+before_cache:
+  - rm -f  $HOME/.gradle/caches/modules-2/modules-2.lock
+  - rm -fr $HOME/.gradle/caches/*/plugin-resolution/
+cache:
+  directories:
+    - $HOME/.gradle/caches/
+    - $HOME/.gradle/wrapper/
