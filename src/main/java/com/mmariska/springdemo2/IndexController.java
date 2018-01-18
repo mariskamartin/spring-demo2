@@ -14,12 +14,14 @@ public class IndexController {
 
     @RequestMapping(method = RequestMethod.GET, produces = {MediaType.TEXT_PLAIN_VALUE})
     public String index() {
-        return "GET /api \n" +
-                "GET /api/{name} \n" +
-                "GET /generate/widgets/{count} \n" +
+        return "GET /api/widget \n" +
+                "GET /api/widget/{name} \n" +
+                "GET /api/widget/generate/{count} \n" +
                 "\n" +
                 "GET /time/basic \n" +
-                "GET /time/re \n";
+                "GET /time/re \n" +
+                "GET /time/callable \n" +
+                "GET /time/deferred \n";
     }
 
 }
