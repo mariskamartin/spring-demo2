@@ -19,7 +19,7 @@ public class RandomPortExampleTests {
 
     @Test
     public void exampleTest() {
-        Widget body = this.restTemplate.getForObject("/api", Widget.class);
+        Widget body = this.restTemplate.getForObject("/api/widget", Widget.class);
         assertThat(body.getName()).isEqualTo("green");
     }
 }
