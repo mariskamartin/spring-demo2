@@ -36,7 +36,9 @@ repositories {
 
 
 dependencies {
-	compile('org.springframework.boot:spring-boot-starter-web')
+	compile group: 'org.springframework.boot', name:'spring-boot-starter-web'
+	compile group: 'net.logstash.logback', name: 'logstash-logback-encoder', version: '4.11'
+
 	runtime('com.h2database:h2')
 	testCompile('org.springframework.boot:spring-boot-starter-test')
 }
