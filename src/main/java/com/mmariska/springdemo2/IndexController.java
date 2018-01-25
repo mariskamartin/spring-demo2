@@ -1,5 +1,6 @@
 package com.mmariska.springdemo2;
 
+import com.mmariska.springdemo2.domain.Widget;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -17,6 +18,9 @@ public class IndexController {
         return "GET /api/widget \n" +
                 "GET /api/widget/{name} \n" +
                 "GET /api/widget/generate/{count} \n" +
+                "\n" +
+                "GET /error/e1 \n" +
+                "GET /error/e2 (this logs error in code)\n" +
                 "\n" +
                 "GET /time/basic \n" +
                 "GET /time/re \n" +
