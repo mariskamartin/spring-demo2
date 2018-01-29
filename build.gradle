@@ -39,6 +39,7 @@ dependencies {
 	compile group: 'org.springframework.boot', name:'spring-boot-starter-web'
 	compile group: 'net.logstash.logback', name: 'logstash-logback-encoder', version: '4.11'
 	compile group: 'org.codehaus.janino', name: 'janino', version: '3.0.6'
+	compile group: 'org.springframework.boot', name: 'spring-boot-starter-actuator'
 
 	runtime('com.h2database:h2')
 	testCompile('org.springframework.boot:spring-boot-starter-test')
