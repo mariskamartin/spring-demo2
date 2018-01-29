@@ -17,13 +17,4 @@
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
     </root>
-
-    <logger name="com.mmariska.springdemo2" level="DEBUG" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-    </logger>
-
-    <logger name="org.springframework.web" level="INFO" additivity="false">
-        <appender-ref ref="CONSOLE"/>
-    </logger>
-
 </configuration>
