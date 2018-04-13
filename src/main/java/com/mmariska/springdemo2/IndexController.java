@@ -22,6 +22,10 @@ public class IndexController {
                 "GET /error/e1 \n" +
                 "GET /error/e2 (this logs error in code)\n" +
                 "\n" +
+                "GET /perf/sum1\n" +
+                "GET /perf/sum/{count} (no sleep time)\n" +
+                "GET /perf/sum/{count}/sleep/{sleep} (could be CPU heavy)\n" +
+                "\n" +
                 "GET /time/basic \n" +
                 "GET /time/re \n" +
                 "GET /time/callable \n" +
