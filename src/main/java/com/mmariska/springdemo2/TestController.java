@@ -20,6 +20,7 @@ public class TestController {
 
     @RequestMapping(value="/call1", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String call1() {
+        log.info("start call1 from (pod name): " + System.getenv("MY_POD_NAME"));
         RestTemplate restTemplate = new RestTemplate();
         ResponseEntity<String> response = restTemplate.getForEntity(getCall1Url(), String.class);
         return response.getBody();
