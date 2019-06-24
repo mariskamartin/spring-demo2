@@ -22,6 +22,16 @@ public class IndexController {
                 "GET /error/e1 \n" +
                 "GET /error/e2 (this logs error in code)\n" +
                 "\n" +
+                "GET /perf/eatAllCPU (default is for 5_000 ms)\n" +
+                "GET /perf/eatAllCPU/time/{timeMillis}\n" +
+                "GET /perf/eatMemory/{countMB}\n" +
+                "GET /perf/eatMemory/weak/{countMB}\n" +
+                "GET /perf/sum1\n" +
+                "GET /perf/sum/{count} (no sleep time)\n" +
+                "GET /perf/sum/{count}/sleep/{sleep} (could be CPU heavy)\n" +
+                "\n" +
+                "GET /test/call1 \n" +
+                "\n" +
                 "GET /time/basic \n" +
                 "GET /time/re \n" +
                 "GET /time/callable \n" +

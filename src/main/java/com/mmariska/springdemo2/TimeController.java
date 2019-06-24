@@ -26,7 +26,7 @@ public class TimeController {
 
     @RequestMapping(value = "/basic", method = RequestMethod.GET)
     public TimeResponse timeBasic() {
-        log.info("Basic time request");
+        log.info("Basic time request(pod name): " + System.getenv("MY_POD_NAME") );
         return now();
     }
 
