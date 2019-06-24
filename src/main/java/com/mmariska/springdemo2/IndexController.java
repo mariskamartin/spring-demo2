@@ -30,6 +30,8 @@ public class IndexController {
                 "GET /perf/sum/{count} (no sleep time)\n" +
                 "GET /perf/sum/{count}/sleep/{sleep} (could be CPU heavy)\n" +
                 "\n" +
+                "GET /test/call1 \n" +
+                "\n" +
                 "GET /time/basic \n" +
                 "GET /time/re \n" +
                 "GET /time/callable \n" +
