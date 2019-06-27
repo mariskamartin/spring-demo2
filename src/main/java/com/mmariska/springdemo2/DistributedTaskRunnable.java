@@ -1,9 +1,7 @@
 package com.mmariska.springdemo2;
 
 import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
-import org.redisson.api.RMap;
-import org.redisson.api.RQueue;
-import org.redisson.api.RedissonClient;
+import org.redisson.api.*;
 import org.redisson.api.annotation.RInject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,16 +28,21 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
 
     @Override
     public void run() {
-        log.info("({}) pool new task Qwait > Qwork", System.getenv("MY_POD_NAME"));
-        RQueue<String> waitQueue = redisson.getQueue(REDIS_SHARED_WAIT_QUEUE);
-        String currentTaskId = waitQueue.pollLastAndOfferFirstTo(REDIS_SHARED_WORK_QUEUE);
+        log.info("({}) move task Qwait > Qwork", System.getenv("MY_POD_NAME"));
+        RList<String> waitQueue = redisson.getList(REDIS_SHARED_WAIT_QUEUE);
+        RList<String> workQueue = redisson.getList(REDIS_SHARED_WORK_QUEUE);
 
-        if (currentTaskId == null) throw new IllegalStateException("Task is executed without taskId");
+        //fixme Atomically remove and add task?
+        workQueue.add(taskId); // first add.. for visibility, when app is killed here
+        waitQueue.remove(taskId);
+
+        if (taskId == null) throw new IllegalStateException("Task is executed without taskId");
 
         long sleepMs = getSleepInMs();
         log.info("({}) going to sleep/work for {}[ms]", System.getenv("MY_POD_NAME"), sleepMs);
         sleep(sleepMs);
 
+        //syntetic example
         RMap<String, Integer> map = redisson.getMap("myMap");
         long result = 0;
         for (Integer value : map.values()) {
@@ -49,14 +52,12 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
 
         log.info("({}) write result to redis resultMap <taskId, results>", System.getenv("MY_POD_NAME"));
         RMap<String, Object> results = redisson.getMap("results");
-        results.put(currentTaskId, result);
-        log.info("({}) remove job {} from Qwork", System.getenv("MY_POD_NAME"), currentTaskId);
-        redisson.getList(REDIS_SHARED_WORK_QUEUE).remove(currentTaskId);
-
-        DistributedTaskQueue.checkChainedTasksAfterTaskDone(redisson, currentTaskId);
+        results.put(taskId, result);
+        log.info("({}) remove job {} from Qwork", System.getenv("MY_POD_NAME"), taskId);
+        workQueue.remove(taskId);
+        DistributedTaskQueue.checkChainedTasksAfterTaskDone(redisson, taskId);
         log.info("({}) worker checked chainedTasks", System.getenv("MY_POD_NAME"));
-
-        log.info("({}) worker done for task {}", System.getenv("MY_POD_NAME"), currentTaskId);
+        log.info("({}) worker done for task {}", System.getenv("MY_POD_NAME"), taskId);
     }
 
     public String getTaskId() {

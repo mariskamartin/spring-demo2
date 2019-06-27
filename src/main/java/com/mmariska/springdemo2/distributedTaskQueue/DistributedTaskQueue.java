@@ -41,19 +41,18 @@ public class DistributedTaskQueue {
     }
 
     public static String offer(RedissonClient redissonClient, DistributedTaskRunnable task) {
+        if( ! redissonClient.getQueue(REDIS_SHARED_WAIT_QUEUE).offer(task.getTaskId()) ) {
+            throw new IllegalStateException("Problem with scheduling task " + task.getTaskId() + " - " + task);
+        }
+
+        //just and schedule concrete task - queue is created on redis executor side
         ExecutorOptions options = ExecutorOptions.defaults();
         options.taskRetryInterval(15, TimeUnit.SECONDS);
         RExecutorService executorService = redissonClient.getExecutorService(REDIS_SHARED_EXECUTOR, options);
-        RExecutorFuture<?> future = ((RScheduledExecutorService) executorService).schedule(task,200, TimeUnit.MILLISECONDS);
-        String taskId = future.getTaskId();
-        redissonClient.getQueue(REDIS_SHARED_WAIT_QUEUE).offer(taskId);// fixme THIS IS WRONG...
-        log.info("scheduled task Id = " + taskId);
-        return taskId;
-
-    // producer put into q1 - jobs wait for customers
-    // customer put from q1 a put into q2 working on it.. (atomix operation > pollLastAndOfferFirstTo via redisson )
-    // consumer after completion removes item from q2 as done
-//        return false;
+        RExecutorFuture<?> future = executorService.submit(task);
+//        String taskId = future.getTaskId(); //do not use redis task id
+        log.info("scheduled task Id = " + task.getTaskId());
+        return task.getTaskId();
     }
 
     public void offerChain(DistributedTaskRunnable task, String... downStreamTasks) {
@@ -96,5 +95,4 @@ public class DistributedTaskQueue {
         //fixme refactor
         return System.getenv("REDIS_HOST") != null ? System.getenv("SD2_REDIS_HOST") : "redis://127.0.0.1:6379";
     }
-
 }
