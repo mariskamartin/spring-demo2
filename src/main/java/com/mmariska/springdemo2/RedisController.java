@@ -114,8 +114,7 @@ public class RedisController {
 
     @RequestMapping(value="/q/done/{task}", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String doneTask(@PathVariable() String task) {
-        RList<String> list = redisson.getList("q2");
-        return "Task ["+task+"] removed " + list.remove(task) + " and job is done";
+        return "Task ["+task+"] is done = " + distributedTaskQueue.isTaskDone(task);
     }
 
     @RequestMapping(value="/q/subondelete", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
@@ -189,7 +188,7 @@ public class RedisController {
     }
 
     @RequestMapping(value="/driver/1", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
-    private String driver1() throws InterruptedException {
+    private String driver1() throws InterruptedException, ExecutionException {
         //create jobStat1
         //   create runnableTask with shared id
         //   submit to q1 + to executor   TaskQueue.offer(job)
@@ -199,11 +198,18 @@ public class RedisController {
         //create condition jobAggStats (jobStat1, jobStat2)
         //start
 
-        String task1 = distributedTaskQueue.offer(new DistributedTaskRunnable());
-        String task2 = distributedTaskQueue.offer(new DistributedTaskRunnable());
-        distributedTaskQueue.offerChain(new LongDistributedTaskRunnable(), task1, task2);
+        DistributedTaskRunnable task1 = new DistributedTaskRunnable();
+        Future<?> task1result = distributedTaskQueue.offer(task1);
+        DistributedTaskRunnable task2 = new DistributedTaskRunnable();
+        Future<?> task2result = distributedTaskQueue.offer(task2);
+        Future<Object> objectFuture = distributedTaskQueue.offerChain(new LongDistributedTaskRunnable(), task1.getTaskId(), task2.getTaskId());
 
-        return "offer item - taskId = " + Arrays.asList(task1, task2);
+        log.info("results of aggregated task = {}", objectFuture.get());
+
+//        task1result.get(); //wait for task done
+//        task2result.get(); //wait for task done
+
+        return "offer item - taskId = " + Arrays.asList(task1, task2) + " task2 result = " + distributedTaskQueue.getResult(task2.getTaskId());
     }
 
     @RequestMapping(value="/driver/2", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})

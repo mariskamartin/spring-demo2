@@ -12,9 +12,6 @@ import java.util.UUID;
 
 public class DistributedTaskRunnable implements Runnable, Serializable {
     private static final Logger log = LoggerFactory.getLogger(DistributedTaskRunnable.class);
-    //fixme duplicated in distributed Queue class
-    public static final String REDIS_SHARED_WAIT_QUEUE = "waitQueue"; //waiting for workers
-    public static final String REDIS_SHARED_WORK_QUEUE = "workQueue"; //workers already started work on these tasks
     private final long createTime;
     private final String taskId;
 
@@ -29,12 +26,18 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
     @Override
     public void run() {
         log.info("({}) move task Qwait > Qwork", System.getenv("MY_POD_NAME"));
-        RList<String> waitQueue = redisson.getList(REDIS_SHARED_WAIT_QUEUE);
-        RList<String> workQueue = redisson.getList(REDIS_SHARED_WORK_QUEUE);
+        RList<String> waitQueue = redisson.getList(DistributedTaskQueue.REDIS_SHARED_WAIT_QUEUE);
+        RList<String> workQueue = redisson.getList(DistributedTaskQueue.REDIS_SHARED_WORK_QUEUE);
+
+        RBatch batch = redisson.createBatch();
+        batch.getList(DistributedTaskQueue.REDIS_SHARED_WORK_QUEUE).addAsync(0,taskId);
+        batch.getList(DistributedTaskQueue.REDIS_SHARED_WAIT_QUEUE).removeAsync(taskId,1);
+        BatchResult<?> execute = batch.execute();
+        //todo check result if all is done
 
         //fixme Atomically remove and add task?
-        workQueue.add(taskId); // first add.. for visibility, when app is killed here
-        waitQueue.remove(taskId);
+//        workQueue.add(taskId); // first add.. for visibility, when app is killed here
+//        waitQueue.remove(taskId);
 
         if (taskId == null) throw new IllegalStateException("Task is executed without taskId");
 
@@ -43,21 +46,27 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
         sleep(sleepMs);
 
         //syntetic example
+        long result = getResult();
+
+        log.info("({}) write result to redis resultMap <taskId, results>", System.getenv("MY_POD_NAME"));
+        RMap<String, Object> results = redisson.getMap(DistributedTaskQueue.REDISSON_RESULTS_MAP);
+        results.put(taskId, result);
+        log.info("({}) remove job {} from Qwork", System.getenv("MY_POD_NAME"), taskId);
+        workQueue.remove(taskId);
+        DistributedTaskQueue.checkChainedTasksAfterTaskDone(redisson, taskId);
+        log.info("({}) worker checked chainedTasks", System.getenv("MY_POD_NAME"));
+        redisson.getTopic(DistributedTaskQueue.REDISSON_DONE_TOPIC).publish(taskId); //fixme static access
+        log.info("({}) worker done for task {}", System.getenv("MY_POD_NAME"), taskId);
+    }
+
+    protected long getResult() {
         RMap<String, Integer> map = redisson.getMap("myMap");
         long result = 0;
         for (Integer value : map.values()) {
 
             result += value;
         }
-
-        log.info("({}) write result to redis resultMap <taskId, results>", System.getenv("MY_POD_NAME"));
-        RMap<String, Object> results = redisson.getMap("results");
-        results.put(taskId, result);
-        log.info("({}) remove job {} from Qwork", System.getenv("MY_POD_NAME"), taskId);
-        workQueue.remove(taskId);
-        DistributedTaskQueue.checkChainedTasksAfterTaskDone(redisson, taskId);
-        log.info("({}) worker checked chainedTasks", System.getenv("MY_POD_NAME"));
-        log.info("({}) worker done for task {}", System.getenv("MY_POD_NAME"), taskId);
+        return result;
     }
 
     public String getTaskId() {
@@ -79,5 +88,4 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
             e.printStackTrace();
         }
     }
-
 }

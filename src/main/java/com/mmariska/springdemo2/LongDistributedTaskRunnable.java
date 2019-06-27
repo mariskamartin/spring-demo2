@@ -6,4 +6,9 @@ public class LongDistributedTaskRunnable extends DistributedTaskRunnable {
     protected long getSleepInMs() {
         return 20000;
     }
+
+    @Override
+    protected long getResult() {
+        return super.getResult() + 20000;
+    }
 }
