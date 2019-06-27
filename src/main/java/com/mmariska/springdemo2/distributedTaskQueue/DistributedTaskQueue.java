@@ -66,23 +66,23 @@ public class DistributedTaskQueue {
             }
         });
 
-        RMap<DistributedTaskRunnable, Set<String>> chainedTasksMap = redisson.getMap(REDIS_SHARED_CHAIN_TASK_MAP);
-        Set<String> stringSet = new HashSet<>(Arrays.asList(downStreamTasks));
-        chainedTasksMap.put(task, stringSet);
+        RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(REDIS_SHARED_CHAIN_TASK_MAP);
+        ChainedDistributedTask chainedTask = new ChainedDistributedTask(task);
+        chainedTask.getDownstreamTasks().addAll(Arrays.asList(downStreamTasks));
+        chainedTasksMap.put(task.getTaskId(), chainedTask);
         return future;
     }
 
     public static void checkChainedTasksAfterTaskDone(RedissonClient redissonClient, String doneTask) {
-        RMap<DistributedTaskRunnable, Set<String>> chainedTasksMap = redissonClient.getMap(REDIS_SHARED_CHAIN_TASK_MAP);
+        RMap<String, ChainedDistributedTask> chainedTasksMap = redissonClient.getMap(REDIS_SHARED_CHAIN_TASK_MAP);
         log.info("chainedTasks definitions = {}", chainedTasksMap.keySet().size());
-        for (Map.Entry<DistributedTaskRunnable, Set<String>> entry : chainedTasksMap.entrySet()) {
-            Set<String> downStreamTasks = entry.getValue();
-            if(downStreamTasks.remove(doneTask)) {
-                chainedTasksMap.put(entry.getKey(), downStreamTasks); //update map
-                DistributedTaskRunnable chainedTask = entry.getKey();
-                log.info("removed task ({}) from {}", doneTask, chainedTask);
-                if (entry.getValue().isEmpty()) {
-                    offer(redissonClient, chainedTask);
+        for (Map.Entry<String, ChainedDistributedTask> entry : chainedTasksMap.entrySet()) {
+            ChainedDistributedTask chainedTask = entry.getValue();
+            if(chainedTask.getDownstreamTasks().remove(doneTask)) {
+                chainedTasksMap.put(entry.getKey(), chainedTask); //update map
+                log.info("removed task ({}) from {}", doneTask, chainedTask.getTask());
+                if (chainedTask.getDownstreamTasks().isEmpty()) {
+                    offer(redissonClient, chainedTask.getTask());
                     chainedTasksMap.remove(entry.getKey()); // remove itself from map
                 }
             }
@@ -93,7 +93,7 @@ public class DistributedTaskQueue {
         RBatch batch = redisson.createBatch();
         batch.getQueue(REDIS_SHARED_WAIT_QUEUE).containsAsync(taskId);
         batch.getQueue(REDIS_SHARED_WORK_QUEUE).containsAsync(taskId);
-//        batch.getMap(REDIS_SHARED_CHAIN_TASK_MAP).containsKeyAsync(taskId) // fixme we cannot directly ask.. there is object not id
+        batch.getMap(REDIS_SHARED_CHAIN_TASK_MAP).containsKeyAsync(taskId);
         BatchResult<?> execute = batch.execute();
         for (Object resp : execute.getResponses()) {
             if ((boolean) resp) {

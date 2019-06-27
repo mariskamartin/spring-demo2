@@ -25,38 +25,33 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
 
     @Override
     public void run() {
-        log.info("({}) move task Qwait > Qwork", System.getenv("MY_POD_NAME"));
+        if (taskId == null) throw new IllegalStateException("Task is executed without taskId");
+        log.info("move task Qwait > Qwork");
         RList<String> waitQueue = redisson.getList(DistributedTaskQueue.REDIS_SHARED_WAIT_QUEUE);
         RList<String> workQueue = redisson.getList(DistributedTaskQueue.REDIS_SHARED_WORK_QUEUE);
 
         RBatch batch = redisson.createBatch();
         batch.getList(DistributedTaskQueue.REDIS_SHARED_WORK_QUEUE).addAsync(0,taskId);
         batch.getList(DistributedTaskQueue.REDIS_SHARED_WAIT_QUEUE).removeAsync(taskId,1);
-        BatchResult<?> execute = batch.execute();
-        //todo check result if all is done
-
-        //fixme Atomically remove and add task?
-//        workQueue.add(taskId); // first add.. for visibility, when app is killed here
-//        waitQueue.remove(taskId);
-
-        if (taskId == null) throw new IllegalStateException("Task is executed without taskId");
+        BatchResult<Boolean> batchResult = (BatchResult<Boolean>) batch.execute();
+        if (batchResult.getResponses().contains(false)) throw new IllegalStateException("Some problem with moving task(" + taskId + ") between queues.");
 
         long sleepMs = getSleepInMs();
-        log.info("({}) going to sleep/work for {}[ms]", System.getenv("MY_POD_NAME"), sleepMs);
+        log.info("going to sleep/work for {}[ms]", sleepMs);
         sleep(sleepMs);
 
         //syntetic example
         long result = getResult();
 
-        log.info("({}) write result to redis resultMap <taskId, results>", System.getenv("MY_POD_NAME"));
+        log.info("write result to redis resultMap <taskId, results>");
         RMap<String, Object> results = redisson.getMap(DistributedTaskQueue.REDISSON_RESULTS_MAP);
         results.put(taskId, result);
-        log.info("({}) remove job {} from Qwork", System.getenv("MY_POD_NAME"), taskId);
+        log.info("remove job {} from Qwork", taskId);
         workQueue.remove(taskId);
         DistributedTaskQueue.checkChainedTasksAfterTaskDone(redisson, taskId);
-        log.info("({}) worker checked chainedTasks", System.getenv("MY_POD_NAME"));
+        log.info("worker checked chainedTasks");
         redisson.getTopic(DistributedTaskQueue.REDISSON_DONE_TOPIC).publish(taskId); //fixme static access
-        log.info("({}) worker done for task {}", System.getenv("MY_POD_NAME"), taskId);
+        log.info("worker done for task {}", taskId);
     }
 
     protected long getResult() {

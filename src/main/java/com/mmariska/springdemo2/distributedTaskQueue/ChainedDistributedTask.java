@@ -2,16 +2,17 @@ package com.mmariska.springdemo2.distributedTaskQueue;
 
 import com.mmariska.springdemo2.DistributedTaskRunnable;
 
-import java.util.Collections;
+import java.io.Serializable;
+import java.util.HashSet;
 import java.util.Set;
 
-public class ChainedDistributedTask {
+public class ChainedDistributedTask implements Serializable {
     private final DistributedTaskRunnable task;
     private final Set<String> downstreamTasks;
 
     public ChainedDistributedTask(DistributedTaskRunnable task) {
         this.task = task;
-        this.downstreamTasks = Collections.EMPTY_SET;
+        this.downstreamTasks = new HashSet<>();
     }
 
     public Set<String> getDownstreamTasks() {
