@@ -32,6 +32,8 @@ public class IndexController {
                 "\n" +
                 "GET /test/call1 \n" +
                 "\n" +
+                "GET /redis/schedule \n" +
+                "\n" +
                 "GET /time/basic \n" +
                 "GET /time/re \n" +
                 "GET /time/callable \n" +
