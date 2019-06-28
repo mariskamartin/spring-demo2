@@ -20,7 +20,7 @@ after_success:
   - export REPO=$DOCKER_USER/spring-demo2
   - export TAG=`if [ "$TRAVIS_BRANCH" == "master" ]; then echo "latest"; else echo $TRAVIS_BRANCH ; fi`
 #  - docker build -f Dockerfile -t $REPO:$COMMIT .
-  - ./gradlew build -x test docker
+  - ./gradlew build docker
   - docker tag $REPO:latest $REPO:$TAG
   - docker push $REPO:$TAG
   - docker logout
