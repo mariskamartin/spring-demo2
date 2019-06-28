@@ -14,19 +14,25 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
     private static final Logger log = LoggerFactory.getLogger(DistributedTaskRunnable.class);
     private final long createTime;
     private final String taskId;
+    private final long sleepMs;
 
     @RInject
     private RedissonClient redisson;
 
     public DistributedTaskRunnable() {
+        this("dist-job-");
+    }
+
+    public DistributedTaskRunnable(String prefix) {
         this.createTime = new Date().getTime();
-        this.taskId = "dist-job-" + UUID.randomUUID().toString();
+        this.taskId = prefix + UUID.randomUUID().toString();
+        this.sleepMs = Math.round(Math.random() * 5000);
     }
 
     @Override
     public void run() {
         if (taskId == null) throw new IllegalStateException("Task is executed without taskId");
-        log.info("move task Qwait > Qwork");
+        log.info("move task({}) Qwait > Qwork", taskId);
         RList<String> waitQueue = redisson.getList(DistributedTaskQueue.REDIS_SHARED_WAIT_QUEUE);
         RList<String> workQueue = redisson.getList(DistributedTaskQueue.REDIS_SHARED_WORK_QUEUE);
 
@@ -36,12 +42,10 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
         BatchResult<Boolean> batchResult = (BatchResult<Boolean>) batch.execute();
         if (batchResult.getResponses().contains(false)) throw new IllegalStateException("Some problem with moving task(" + taskId + ") between queues.");
 
-        long sleepMs = getSleepInMs();
-        log.info("going to sleep/work for {}[ms]", sleepMs);
-        sleep(sleepMs);
-
         //syntetic example
         long result = getResult();
+        log.info("going to sleep/work for {}[ms]", getSleepInMs());
+        sleep(getSleepInMs());
 
         log.info("write result to redis resultMap <taskId, results>");
         RMap<String, Object> results = redisson.getMap(DistributedTaskQueue.REDISSON_RESULTS_MAP);
@@ -55,13 +59,7 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
     }
 
     protected long getResult() {
-        RMap<String, Integer> map = redisson.getMap("myMap");
-        long result = 0;
-        for (Integer value : map.values()) {
-
-            result += value;
-        }
-        return result;
+        return getSleepInMs();
     }
 
     public String getTaskId() {
@@ -73,7 +71,7 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
     }
 
     protected long getSleepInMs() {
-        return Math.round(Math.random() * 5000);
+        return sleepMs;
     }
 
     private void sleep(long sleepMs) {
@@ -82,5 +80,9 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
+    }
+
+    protected RedissonClient getRedisson() {
+        return redisson;
     }
 }

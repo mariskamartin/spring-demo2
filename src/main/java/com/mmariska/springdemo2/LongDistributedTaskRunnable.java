@@ -9,6 +9,6 @@ public class LongDistributedTaskRunnable extends DistributedTaskRunnable {
 
     @Override
     protected long getResult() {
-        return super.getResult() + 20000;
+        return super.getResult() + 20;
     }
 }

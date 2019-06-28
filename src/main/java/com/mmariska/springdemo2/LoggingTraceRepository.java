@@ -13,7 +13,7 @@ import java.util.Map;
 import static net.logstash.logback.marker.Markers.*;
 
 
-@Component
+//@Component
 public class LoggingTraceRepository implements TraceRepository {
 
     private static final Logger LOG = LoggerFactory.getLogger(LoggingTraceRepository.class);

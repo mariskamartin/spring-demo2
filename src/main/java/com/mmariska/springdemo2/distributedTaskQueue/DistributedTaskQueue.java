@@ -47,7 +47,7 @@ public class DistributedTaskQueue {
 
         //just and schedule concrete task - queue is created on redis executor side
         ExecutorOptions options = ExecutorOptions.defaults();
-        options.taskRetryInterval(15, TimeUnit.SECONDS);
+        options.taskRetryInterval(0, TimeUnit.SECONDS); // we do not want to reschedule automatically
         RExecutorService executorService = redissonClient.getExecutorService(REDIS_SHARED_EXECUTOR, options);
         RExecutorFuture<?> future = executorService.submit(task);
 //        String taskId = future.getTaskId(); //do not use redis task id
@@ -114,7 +114,7 @@ public class DistributedTaskQueue {
      * @return
      */
     public String debugPrintQueues() {
-        return String.format("distributedTaskQueue [waitQueue = %s, workQueue = %s]", redisson.getQueue(REDIS_SHARED_WAIT_QUEUE), redisson.getQueue(REDIS_SHARED_WORK_QUEUE));
+        return String.format("distributedTaskQueue [waitQueue = %s, workQueue = %s, chainedTasks = %s]", redisson.getQueue(REDIS_SHARED_WAIT_QUEUE), redisson.getQueue(REDIS_SHARED_WORK_QUEUE), redisson.getMap(REDIS_SHARED_CHAIN_TASK_MAP).readAllKeySet());
     }
 
     private String getRedisAddress() {

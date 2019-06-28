@@ -32,7 +32,10 @@ public class IndexController {
                 "\n" +
                 "GET /test/call1 \n" +
                 "\n" +
-                "GET /redis/schedule \n" +
+                "GET /redis/get ... get current state of shared tasks queue\n" +
+                "GET /redis/worker ... subscribe executor thread in application \n" +
+                "GET /redis/driver/agg ... produce aggregation tasks example \n" +
+                "GET /redis/driver/1 ... produce tasks example \n" +
                 "\n" +
                 "GET /time/basic \n" +
                 "GET /time/re \n" +

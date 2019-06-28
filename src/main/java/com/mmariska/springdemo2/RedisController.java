@@ -93,7 +93,7 @@ public class RedisController {
         return "("+ System.getenv("MY_POD_NAME") + ") dtq = " + q1.toString() + " \n q2 = " + q2.toString();
     }
 
-    @RequestMapping(value="/workers", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
+    @RequestMapping(value="/q/workers", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String workers() {
         RExecutorService executorService = redisson.getExecutorService("myExecutor", ExecutorOptions.defaults());
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -169,47 +169,26 @@ public class RedisController {
     // worker starts > checkJobs
     // listen for newJobEvent > checkJobs
 
-    @RequestMapping(value="/q/worker", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
-    private String worker() {
-        distributedTaskQueue.subscribeWorker();
-        return "("+ System.getenv("MY_POD_NAME") + ") distributed worker registered";
-    }
-
-    @RequestMapping(value="/q/get", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
+    @RequestMapping(value="/get", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String qGet() {
         return "("+ System.getenv("MY_POD_NAME") + ") dtq = " + distributedTaskQueue.debugPrintQueues();
     }
 
-    @RequestMapping(value="/q/clear", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
+    @RequestMapping(value="/clear", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String qClear() {
-        RQueue<Object> queue = redisson.getQueue("waitQueue");
-        queue.clear();
-        return "("+ System.getenv("MY_POD_NAME") + ") dtq = " + queue;
+        RQueue<Object> queueWait = redisson.getQueue(DistributedTaskQueue.REDIS_SHARED_WAIT_QUEUE);
+        queueWait.clear();
+        RQueue<Object> queueWork = redisson.getQueue(DistributedTaskQueue.REDIS_SHARED_WORK_QUEUE);
+        queueWork.clear();
+        return "("+ System.getenv("MY_POD_NAME") + ") ques = " + Arrays.asList(queueWait, queueWork);
     }
 
-    @RequestMapping(value="/driver/1", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
-    private String driver1() throws InterruptedException, ExecutionException {
-        //create jobStat1
-        //   create runnableTask with shared id
-        //   submit to q1 + to executor   TaskQueue.offer(job)
-                // in task it process q1 > q2 and after writes results and removes it from q2
-                // emits jobDone - taskId
-        //create jobStat2
-        //create condition jobAggStats (jobStat1, jobStat2)
-        //start
 
-        DistributedTaskRunnable task1 = new DistributedTaskRunnable();
-        Future<?> task1result = distributedTaskQueue.offer(task1);
-        DistributedTaskRunnable task2 = new DistributedTaskRunnable();
-        Future<?> task2result = distributedTaskQueue.offer(task2);
-        Future<Object> objectFuture = distributedTaskQueue.offerChain(new LongDistributedTaskRunnable(), task1.getTaskId(), task2.getTaskId());
 
-        log.info("results of aggregated task = {}", objectFuture.get());
-
-//        task1result.get(); //wait for task done
-//        task2result.get(); //wait for task done
-
-        return "offer item - taskId = " + Arrays.asList(task1, task2) + " task2 result = " + distributedTaskQueue.getResult(task2.getTaskId());
+    @RequestMapping(value="/worker", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
+    private String worker() {
+        distributedTaskQueue.subscribeWorker();
+        return "("+ System.getenv("MY_POD_NAME") + ") distributed worker registered";
     }
 
     @RequestMapping(value="/driver/2", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
@@ -220,6 +199,32 @@ public class RedisController {
     @RequestMapping(value="/driver/3", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String driver3() {
         return "offer fail task - taskId = " + distributedTaskQueue.offer(new FailDistributedTaskRunnable());
+    }
+
+    @RequestMapping(value="/driver/agg", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
+    private String driver0() throws InterruptedException, ExecutionException {
+        DistributedTaskRunnable task1 = new LongDistributedTaskRunnable();
+        distributedTaskQueue.offer(task1);
+        DistributedTaskRunnable task2 = new LongDistributedTaskRunnable();
+        distributedTaskQueue.offer(task2);
+        AggregationDistributedTaskRunnable taskAgg = new AggregationDistributedTaskRunnable(task1.getTaskId(), task2.getTaskId());
+        Future<Object> aggregFuture = distributedTaskQueue.offerChain(taskAgg, task1.getTaskId(), task2.getTaskId());
+        // pujde doimplementovat distributedTaskQueue.getFuture(taskId) :)
+
+        //tree ROOT > regions
+
+        return "offer tasks with aggregation - donwstream taskIds = " + Arrays.asList(task1, task2, taskAgg.getTaskId()) + " agg result = " + aggregFuture.get();
+    }
+
+    @RequestMapping(value="/driver/1", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
+    private String driver1() throws InterruptedException, ExecutionException {
+        DistributedTaskRunnable task1 = new DistributedTaskRunnable();
+        Future<?> task1result = distributedTaskQueue.offer(task1);
+        DistributedTaskRunnable task2 = new DistributedTaskRunnable();
+        Future<?> task2result = distributedTaskQueue.offer(task2);
+        AggregationDistributedTaskRunnable taskAgg = new AggregationDistributedTaskRunnable(task1.getTaskId(), task2.getTaskId());
+        distributedTaskQueue.offerChain(taskAgg, task1.getTaskId(), task2.getTaskId());
+        return String.format("offer case: %s + %s = %s",  task1.getTaskId(), task2.getTaskId(), taskAgg.getTaskId());
     }
 
 }
