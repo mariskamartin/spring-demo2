@@ -3,6 +3,7 @@ package com.mmariska.springdemo2.distributedTaskQueue;
 import com.mmariska.springdemo2.DistributedTaskRunnable;
 import org.redisson.Redisson;
 import org.redisson.api.*;
+import org.redisson.api.listener.MessageListener;
 import org.redisson.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,12 +67,21 @@ public class DistributedTaskQueue {
         CompletableFuture<Object> future = new CompletableFuture<>();
         RTopic taskDoneTopic = redisson.getTopic(REDISSON_DONE_TOPIC);
 
-        //fixme this is not efficient... this creates new and new listeners :/ better to have map of futures and ids and one listener :)
-        taskDoneTopic.addListener(String.class, (channel, doneTaskId) -> {
-            if (doneTaskId.equals(task.getTaskId())) {
-                future.complete(redisson.getMap(REDISSON_RESULTS_MAP).get(doneTaskId));
+        // todo - probably one centralized listener will be more efficient
+        MessageListener<String> messageListener = new MessageListener<String>() {
+            @Override
+            public void onMessage(CharSequence channel, String doneTaskId) {
+                log.info("{} on message {}", this, doneTaskId);
+                if (doneTaskId.equals(task.getTaskId())) {
+                    try {
+                        future.complete(redisson.getMap(REDISSON_RESULTS_MAP).get(doneTaskId));
+                    } finally {
+                        taskDoneTopic.removeListener(this);
+                    }
+                }
             }
-        });
+        };
+        taskDoneTopic.addListener(String.class, messageListener);
 
         RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(REDIS_SHARED_CHAIN_TASK_MAP);
         ChainedDistributedTask chainedTask = new ChainedDistributedTask(task);
