@@ -10,6 +10,12 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.*;
 
+
+/**
+ * Todo - types handling
+*       - error handeling
+ *      - results lifecycle (aggregation tasks? TTL?)
+ */
 public class DistributedTaskQueue {
     private static final Logger log = LoggerFactory.getLogger(DistributedTaskRunnable.class);
 
@@ -47,11 +53,12 @@ public class DistributedTaskQueue {
 
         //just and schedule concrete task - queue is created on redis executor side
         ExecutorOptions options = ExecutorOptions.defaults();
-        options.taskRetryInterval(0, TimeUnit.SECONDS); // we do not want to reschedule automatically
+        options.taskRetryInterval(0, TimeUnit.SECONDS);
+        /* todo - we do not want to reschedule automatically, when all apps are down and some task is in redis, Redis will reschedule it or we can reuse of this functionality and refind job in work queue also */
         RExecutorService executorService = redissonClient.getExecutorService(REDIS_SHARED_EXECUTOR, options);
         RExecutorFuture<?> future = executorService.submit(task);
-//        String taskId = future.getTaskId(); //do not use redis task id
-        log.info("scheduled task Id = " + task.getTaskId());
+//        String taskId = future.getTaskId(); // do not use redis task id - we have problems hot to obtain taskId for chainedTasks
+        log.debug("scheduled task Id = {}", task.getTaskId());
         return future;
     }
 
@@ -75,12 +82,12 @@ public class DistributedTaskQueue {
 
     public static void checkChainedTasksAfterTaskDone(RedissonClient redissonClient, String doneTask) {
         RMap<String, ChainedDistributedTask> chainedTasksMap = redissonClient.getMap(REDIS_SHARED_CHAIN_TASK_MAP);
-        log.info("chainedTasks definitions = {}", chainedTasksMap.keySet().size());
+        log.trace("chainedTasks definitions = {}", chainedTasksMap.keySet().size());
         for (Map.Entry<String, ChainedDistributedTask> entry : chainedTasksMap.entrySet()) {
             ChainedDistributedTask chainedTask = entry.getValue();
             if(chainedTask.getDownstreamTasks().remove(doneTask)) {
                 chainedTasksMap.put(entry.getKey(), chainedTask); //update map
-                log.info("removed task ({}) from {}", doneTask, chainedTask.getTask());
+                log.trace("removed task ({}) from {}", doneTask, chainedTask.getTask());
                 if (chainedTask.getDownstreamTasks().isEmpty()) {
                     offer(redissonClient, chainedTask.getTask());
                     chainedTasksMap.remove(entry.getKey()); // remove itself from map
@@ -104,7 +111,7 @@ public class DistributedTaskQueue {
     }
 
     public boolean recheckFailures() {
-        //needs to reschedule failed tasks pending in queues
+        // todo needs to reschedule failed tasks pending in queues
         // do something with errors in tasks
         return false;
     }

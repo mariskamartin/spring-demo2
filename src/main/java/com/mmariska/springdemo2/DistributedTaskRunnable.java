@@ -32,7 +32,7 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
     @Override
     public void run() {
         if (taskId == null) throw new IllegalStateException("Task is executed without taskId");
-        log.info("move task({}) Qwait > Qwork", taskId);
+        log.debug("move task({}) Qwait > Qwork", taskId);
         RList<String> waitQueue = redisson.getList(DistributedTaskQueue.REDIS_SHARED_WAIT_QUEUE);
         RList<String> workQueue = redisson.getList(DistributedTaskQueue.REDIS_SHARED_WORK_QUEUE);
 
@@ -44,18 +44,18 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
 
         //syntetic example
         long result = getResult();
-        log.info("going to sleep/work for {}[ms]", getSleepInMs());
+        log.debug("going to sleep/work for {}[ms]", getSleepInMs());
         sleep(getSleepInMs());
 
-        log.info("write result to redis resultMap <taskId, results>");
+        log.trace("write result to redis resultMap <taskId, results>");
         RMap<String, Object> results = redisson.getMap(DistributedTaskQueue.REDISSON_RESULTS_MAP);
         results.put(taskId, result);
-        log.info("remove job {} from Qwork", taskId);
+        log.trace("remove job {} from Qwork", taskId);
         workQueue.remove(taskId);
         DistributedTaskQueue.checkChainedTasksAfterTaskDone(redisson, taskId);
-        log.info("worker checked chainedTasks");
+        log.trace("worker checked chainedTasks");
         redisson.getTopic(DistributedTaskQueue.REDISSON_DONE_TOPIC).publish(taskId); //fixme static access
-        log.info("worker done for task {}", taskId);
+        log.debug("worker done for task {}", taskId);
     }
 
     protected long getResult() {

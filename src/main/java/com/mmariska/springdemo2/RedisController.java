@@ -209,9 +209,7 @@ public class RedisController {
         distributedTaskQueue.offer(task2);
         AggregationDistributedTaskRunnable taskAgg = new AggregationDistributedTaskRunnable(task1.getTaskId(), task2.getTaskId());
         Future<Object> aggregFuture = distributedTaskQueue.offerChain(taskAgg, task1.getTaskId(), task2.getTaskId());
-        // pujde doimplementovat distributedTaskQueue.getFuture(taskId) :)
-
-        //tree ROOT > regions
+        // pujde doimplementovat distributedTaskQueue.getFuture(taskId) :) ... a resi to situaci dohledani reakce na task
 
         return "offer tasks with aggregation - donwstream taskIds = " + Arrays.asList(task1, task2, taskAgg.getTaskId()) + " agg result = " + aggregFuture.get();
     }
