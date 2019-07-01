@@ -64,30 +64,12 @@ public class DistributedTaskQueue {
     }
 
     public Future<Object> offerChain(DistributedTaskRunnable task, String... downStreamTasks) {
-        CompletableFuture<Object> future = new CompletableFuture<>();
-        RTopic taskDoneTopic = redisson.getTopic(REDISSON_DONE_TOPIC);
-
-        // todo - probably one centralized listener will be more efficient
-        MessageListener<String> messageListener = new MessageListener<String>() {
-            @Override
-            public void onMessage(CharSequence channel, String doneTaskId) {
-                log.info("{} on message {}", this, doneTaskId);
-                if (doneTaskId.equals(task.getTaskId())) {
-                    try {
-                        future.complete(redisson.getMap(REDISSON_RESULTS_MAP).get(doneTaskId));
-                    } finally {
-                        taskDoneTopic.removeListener(this);
-                    }
-                }
-            }
-        };
-        taskDoneTopic.addListener(String.class, messageListener);
-
         RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(REDIS_SHARED_CHAIN_TASK_MAP);
         ChainedDistributedTask chainedTask = new ChainedDistributedTask(task);
         chainedTask.getDownstreamTasks().addAll(Arrays.asList(downStreamTasks));
         chainedTasksMap.put(task.getTaskId(), chainedTask);
-        return future;
+        log.debug("scheduled chain for task Id = {}", task.getTaskId());
+        return listenOnTaskResult(task.getTaskId());
     }
 
     public static void checkChainedTasksAfterTaskDone(RedissonClient redissonClient, String doneTask) {
@@ -140,7 +122,51 @@ public class DistributedTaskQueue {
     }
 
     public Object getResult(String taskId) {
-        RMap<String, Object> results = redisson.getMap(REDISSON_RESULTS_MAP);
-        return results.get(taskId);
+        return getResultsMap().get(taskId);
+    }
+
+    /**
+     * It returns future for concrete task. Result of task is accesible via get() method.
+     * @param taskId
+     * @return Future
+     */
+    public Future<Object> getFuture(String taskId) {
+        //check result map -> we already have result
+        //todo check for stucked job
+        //return future with listener.. we still waiting
+        if (getResultsMap().containsKey(taskId)) {
+            CompletableFuture<Object> completedFuture = new CompletableFuture<>();
+            boolean complete = completedFuture.complete(getResultsMap().get(taskId));
+            return completedFuture;
+        } else {
+            CompletableFuture<Object> future = listenOnTaskResult(taskId);
+            return future;
+        }
+    }
+
+    private CompletableFuture<Object> listenOnTaskResult(String taskId) {
+        CompletableFuture<Object> future = new CompletableFuture<>();
+        RTopic taskDoneTopic = redisson.getTopic(REDISSON_DONE_TOPIC);
+
+        // todo - probably one centralized listener will be more efficient
+        MessageListener<String> messageListener = new MessageListener<String>() {
+            @Override
+            public void onMessage(CharSequence channel, String doneTaskId) {
+                log.trace("{} on message {}", this, doneTaskId);
+                if (doneTaskId.equals(taskId)) {
+                    try {
+                        future.complete(getResultsMap().get(doneTaskId));
+                    } finally {
+                        taskDoneTopic.removeListener(this);
+                    }
+                }
+            }
+        };
+        taskDoneTopic.addListener(String.class, messageListener);
+        return future;
+    }
+
+    private RMap<String, Object> getResultsMap() {
+        return redisson.getMap(REDISSON_RESULTS_MAP);
     }
 }

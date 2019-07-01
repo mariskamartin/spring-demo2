@@ -201,6 +201,11 @@ public class RedisController {
         return "offer fail task - taskId = " + distributedTaskQueue.offer(new FailDistributedTaskRunnable());
     }
 
+    @RequestMapping(value="/result/{taskId}", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
+    private String getDistributedResult(@PathVariable() String taskId) throws ExecutionException, InterruptedException {
+        return "Task ["+taskId+"] distributed result = " + distributedTaskQueue.getFuture(taskId).get();
+    }
+
     @RequestMapping(value="/driver/agg", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String driver0() throws InterruptedException, ExecutionException {
         DistributedTaskRunnable task1 = new LongDistributedTaskRunnable();
@@ -209,8 +214,6 @@ public class RedisController {
         distributedTaskQueue.offer(task2);
         AggregationDistributedTaskRunnable taskAgg = new AggregationDistributedTaskRunnable(task1.getTaskId(), task2.getTaskId());
         Future<Object> aggregFuture = distributedTaskQueue.offerChain(taskAgg, task1.getTaskId(), task2.getTaskId());
-        // pujde doimplementovat distributedTaskQueue.getFuture(taskId) :) ... a resi to situaci dohledani reakce na task
-
         return "offer tasks with aggregation - donwstream taskIds = " + Arrays.asList(task1, task2, taskAgg.getTaskId()) + " agg result = " + aggregFuture.get();
     }
 
