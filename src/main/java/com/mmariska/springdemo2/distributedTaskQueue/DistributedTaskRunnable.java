@@ -14,45 +14,34 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
     private final long createTime;
     private final String taskId;
     private final long sleepMs;
+    private final String dtqId;
 
     @RInject
     private RedissonClient redisson;
 
     public DistributedTaskRunnable() {
-        this("dist-job-");
+        this("dist-job-", null);
     }
 
-    public DistributedTaskRunnable(String prefix) {
-        this.createTime = new Date().getTime();
-        this.taskId = prefix + UUID.randomUUID().toString();
-        this.sleepMs = Math.round(Math.random() * 5000);
+    public DistributedTaskRunnable(String prefix, String dtqId) {
+        createTime = new Date().getTime();
+        taskId = prefix + UUID.randomUUID().toString();
+        sleepMs = Math.round(Math.random() * 5000);
+        this.dtqId = dtqId;
     }
 
     @Override
     public void run() {
+        DistributedTaskQueue distributedTaskQueue = new DistributedTaskQueue(redisson, dtqId); //missing name
         if (taskId == null) throw new IllegalStateException("Task is executed without taskId");
-        log.debug("move task({}) Qwait > Qwork", taskId);
-        RList<String> waitQueue = redisson.getList(DistributedTaskQueue.REDIS_SHARED_WAIT_QUEUE);
-        RList<String> workQueue = redisson.getList(DistributedTaskQueue.REDIS_SHARED_WORK_QUEUE);
-
-        RBatch batch = redisson.createBatch();
-        batch.getList(DistributedTaskQueue.REDIS_SHARED_WORK_QUEUE).addAsync(0,taskId);
-        batch.getList(DistributedTaskQueue.REDIS_SHARED_WAIT_QUEUE).removeAsync(taskId,1);
-        BatchResult<Boolean> batchResult = (BatchResult<Boolean>) batch.execute();
-        if (batchResult.getResponses().contains(false)) throw new IllegalStateException("Some problem with moving task(" + taskId + ") between queues.");
+        if (!distributedTaskQueue.startWorkOnTask(taskId)) throw new IllegalStateException("Some problem with moving task(" + taskId + ") between queues.");
 
         //syntetic example
         long result = process();
 
-        log.trace("write result to redis resultMap <taskId, results>");
-        RMap<String, Object> results = redisson.getMap(DistributedTaskQueue.REDISSON_RESULTS_MAP);
-        results.put(taskId, result);
-        log.trace("remove job {} from Qwork", taskId);
-        workQueue.remove(taskId);
-        DistributedTaskQueue.checkChainedTasksAfterTaskDone(redisson, taskId);
-        log.trace("worker checked chainedTasks");
-        redisson.getTopic(DistributedTaskQueue.REDISSON_DONE_TOPIC).publish(taskId); //fixme static access
-        log.debug("worker done for task {}", taskId);
+        distributedTaskQueue.storeResults(taskId, result);
+        distributedTaskQueue.checkChainedTasksAfterTaskDone(taskId);
+        distributedTaskQueue.stopWorkOnTask(taskId);
     }
 
     /**

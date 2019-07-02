@@ -71,4 +71,21 @@ public class DistributedTaskQueueTest {
         taskFuture.get(10, TimeUnit.SECONDS);
         assertTrue(distributedTaskQueue.isTaskDone(task1.getTaskId()));
     }
+
+
+    @Test
+    public void testCoexistenceOfDistributedQueues() throws ExecutionException, InterruptedException, TimeoutException {
+        DistributedTaskQueue dtq1 = new DistributedTaskQueue("redis://" + redis.getContainerIpAddress() + ":" + redis.getFirstMappedPort(), "q1");
+        DistributedTaskQueue dtq2 = new DistributedTaskQueue("redis://" + redis.getContainerIpAddress() + ":" + redis.getFirstMappedPort(), "q2");
+        dtq1.offer(new TestDistributedTask(1, "q1"));
+        Future<?> offer = dtq1.offer(new TestDistributedTask(2, "q1"));
+        Future<?> offer2 = dtq2.offer(new TestDistributedTask(3, "q2"));
+        dtq1.subscribeWorker();
+        assertEquals(2L, offer.get(10, TimeUnit.SECONDS));
+        try {
+            offer2.get(5, TimeUnit.SECONDS); // fixme this is slow test, make this somehow different
+        } catch (TimeoutException e) {
+            assertTrue(true);
+        }
+    }
 }

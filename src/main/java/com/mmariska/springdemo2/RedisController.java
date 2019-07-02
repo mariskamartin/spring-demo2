@@ -172,17 +172,6 @@ public class RedisController {
         return "("+ System.getenv("MY_POD_NAME") + ") dtq = " + distributedTaskQueue.debugPrintQueues();
     }
 
-    @RequestMapping(value="/clear", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
-    private String qClear() {
-        RQueue<Object> queueWait = redisson.getQueue(DistributedTaskQueue.REDIS_SHARED_WAIT_QUEUE);
-        queueWait.clear();
-        RQueue<Object> queueWork = redisson.getQueue(DistributedTaskQueue.REDIS_SHARED_WORK_QUEUE);
-        queueWork.clear();
-        return "("+ System.getenv("MY_POD_NAME") + ") ques = " + Arrays.asList(queueWait, queueWork);
-    }
-
-
-
     @RequestMapping(value="/worker", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String worker() {
         distributedTaskQueue.subscribeWorker();

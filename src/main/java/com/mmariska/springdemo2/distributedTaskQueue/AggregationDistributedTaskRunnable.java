@@ -11,7 +11,7 @@ public class AggregationDistributedTaskRunnable extends DistributedTaskRunnable 
     private final String[] aggregatedTaskIds;
 
     public AggregationDistributedTaskRunnable(String... aggregatedTasks) {
-        super("aggreg-job-");
+        super("aggreg-job-", null);
         this.aggregatedTaskIds = aggregatedTasks;
     }
 
@@ -22,8 +22,8 @@ public class AggregationDistributedTaskRunnable extends DistributedTaskRunnable 
 
     @Override
     protected long getResult() {
-        RMap<Object, Object> map = getRedisson().getMap(DistributedTaskQueue.REDISSON_RESULTS_MAP);
-        long sum = Arrays.stream(aggregatedTaskIds).mapToLong(taskId -> (long) map.get(taskId)).sum();
+        DistributedTaskQueue distributedTaskQueue = new DistributedTaskQueue(getRedisson());
+        long sum = Arrays.stream(aggregatedTaskIds).mapToLong(taskId -> (long) distributedTaskQueue.getResult(taskId)).sum();
         log.debug("aggregated result ({}) = {}", aggregatedTaskIds, sum);
         return sum;
     }

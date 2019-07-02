@@ -6,7 +6,13 @@ public class TestDistributedTask extends DistributedTaskRunnable {
 
     private long result;
 
+
     public TestDistributedTask(long result) {
+        this(result, null);
+    }
+
+    public TestDistributedTask(long result, String dtqId) {
+        super("test-dist-job-", dtqId);
         this.result = result;
     }
 
