@@ -187,8 +187,8 @@ public class DistributedTaskQueue {
                 if (doneTaskId.equals(taskId)) {
                     try {
                         Object value = getResultsMap().get(doneTaskId);
-//                        getResultsMap().removeAsync(doneTaskId); //remove after retrieve
-
+                        // plan eviction on result when received somewhere
+//                        getResultsMap().put(doneTaskId, value, 30, TimeUnit.SECONDS); // this is working but what it influence?
                         if (value instanceof Throwable) {
                             future.completeExceptionally((Throwable) value);
                         } else {
@@ -204,8 +204,8 @@ public class DistributedTaskQueue {
         return future;
     }
 
-    private RMap<String, Object> getResultsMap() {
-        return redisson.getMap(redissonResultsMap);
+    private RMapCache<String, Object> getResultsMap() {
+        return redisson.getMapCache(redissonResultsMap);
     }
 
     /**
@@ -241,7 +241,7 @@ public class DistributedTaskQueue {
      */
     public void storeResults(String taskId, Object result) {
         log.trace("[{}] write result to redis resultMap <taskId, results>", dtqId);
-        RMap<String, Object> results = redisson.getMap(redissonResultsMap);
+        RMap<String, Object> results = redisson.getMapCache(redissonResultsMap);
         results.put(taskId, result);
     }
 
