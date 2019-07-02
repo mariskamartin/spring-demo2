@@ -1,6 +1,6 @@
 package com.mmariska.springdemo2;
 
-import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
+import com.mmariska.springdemo2.distributedTaskQueue.*;
 import org.redisson.Redisson;
 import org.redisson.api.*;
 import org.redisson.api.listener.MessageListener;
@@ -14,8 +14,6 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.*;
 

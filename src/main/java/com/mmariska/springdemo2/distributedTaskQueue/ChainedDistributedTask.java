@@ -1,7 +1,5 @@
 package com.mmariska.springdemo2.distributedTaskQueue;
 
-import com.mmariska.springdemo2.DistributedTaskRunnable;
-
 import java.io.Serializable;
 import java.util.HashSet;
 import java.util.Set;

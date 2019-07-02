@@ -1,4 +1,4 @@
-package com.mmariska.springdemo2;
+package com.mmariska.springdemo2.distributedTaskQueue;
 
 import org.redisson.api.RMap;
 import org.redisson.api.RedissonClient;

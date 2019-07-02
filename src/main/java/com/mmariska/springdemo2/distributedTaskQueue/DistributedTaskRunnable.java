@@ -1,6 +1,5 @@
-package com.mmariska.springdemo2;
+package com.mmariska.springdemo2.distributedTaskQueue;
 
-import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
 import org.redisson.api.*;
 import org.redisson.api.annotation.RInject;
 import org.slf4j.Logger;
@@ -43,9 +42,7 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
         if (batchResult.getResponses().contains(false)) throw new IllegalStateException("Some problem with moving task(" + taskId + ") between queues.");
 
         //syntetic example
-        long result = getResult();
-        log.debug("going to sleep/work for {}[ms]", getSleepInMs());
-        sleep(getSleepInMs());
+        long result = process();
 
         log.trace("write result to redis resultMap <taskId, results>");
         RMap<String, Object> results = redisson.getMap(DistributedTaskQueue.REDISSON_RESULTS_MAP);
@@ -56,6 +53,17 @@ public class DistributedTaskRunnable implements Runnable, Serializable {
         log.trace("worker checked chainedTasks");
         redisson.getTopic(DistributedTaskQueue.REDISSON_DONE_TOPIC).publish(taskId); //fixme static access
         log.debug("worker done for task {}", taskId);
+    }
+
+    /**
+     * Put work code here in subClass
+     * @return
+     */
+    protected long process() {
+        long result = getResult();
+        log.debug("going to sleep/work for {}[ms]", getSleepInMs());
+        sleep(getSleepInMs());
+        return result;
     }
 
     protected long getResult() {

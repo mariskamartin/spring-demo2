@@ -1,6 +1,5 @@
-package com.mmariska.springdemo2;
+package com.mmariska.springdemo2.distributedTaskQueue;
 
-import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
 import org.redisson.api.RMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

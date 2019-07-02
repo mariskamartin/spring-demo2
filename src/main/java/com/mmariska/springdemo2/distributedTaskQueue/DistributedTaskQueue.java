@@ -1,6 +1,5 @@
 package com.mmariska.springdemo2.distributedTaskQueue;
 
-import com.mmariska.springdemo2.DistributedTaskRunnable;
 import org.redisson.Redisson;
 import org.redisson.api.*;
 import org.redisson.api.listener.MessageListener;
@@ -14,6 +13,7 @@ import java.util.concurrent.*;
 
 /**
  * Todo - types handling
+ *      - queue name handeling
 *       - error handeling
  *      - results lifecycle (aggregation tasks? TTL?)
  */
@@ -28,10 +28,13 @@ public class DistributedTaskQueue {
     public static final String REDISSON_DONE_TOPIC = "taskDoneTopic";
     private final RedissonClient redisson;
 
+
     public DistributedTaskQueue() {
-        // fixme - blbost vyrabet bez moznosti konfigurace... ?? fasada nema byt zavisla na redissonu
+        this(getRedisAddress());
+    }
+    public DistributedTaskQueue(String redisAddress) {
         Config config = new Config();
-        config.useSingleServer().setAddress(getRedisAddress());
+        config.useSingleServer().setAddress(redisAddress);
         redisson = Redisson.create(config);
     }
 
@@ -39,7 +42,7 @@ public class DistributedTaskQueue {
         RExecutorService executorService = redisson.getExecutorService(REDIS_SHARED_EXECUTOR, ExecutorOptions.defaults());
         ExecutorService executor = Executors.newFixedThreadPool(1);
         executorService.registerWorkers(1, executor);
-        return true; //fixme
+        return true; //for now there is no more logic around
     }
 
 
@@ -51,7 +54,6 @@ public class DistributedTaskQueue {
         if( ! redissonClient.getQueue(REDIS_SHARED_WAIT_QUEUE).offer(task.getTaskId()) ) {
             throw new IllegalStateException("Problem with scheduling task " + task.getTaskId() + " - " + task);
         }
-
         //just and schedule concrete task - queue is created on redis executor side
         ExecutorOptions options = ExecutorOptions.defaults();
         options.taskRetryInterval(0, TimeUnit.SECONDS);
@@ -60,18 +62,19 @@ public class DistributedTaskQueue {
         RExecutorFuture<?> future = executorService.submit(task);
 //        String taskId = future.getTaskId(); // do not use redis task id - we have problems hot to obtain taskId for chainedTasks
         log.debug("scheduled task Id = {}", task.getTaskId());
-        return future;
+        return listenOnTaskResult(redissonClient, task.getTaskId());
     }
 
-    public Future<Object> offerChain(DistributedTaskRunnable task, String... downStreamTasks) {
+    public Future<Object> offerChain(DistributedTaskRunnable task, String... downStreamTaskIds) {
         RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(REDIS_SHARED_CHAIN_TASK_MAP);
         ChainedDistributedTask chainedTask = new ChainedDistributedTask(task);
-        chainedTask.getDownstreamTasks().addAll(Arrays.asList(downStreamTasks));
+        chainedTask.getDownstreamTasks().addAll(Arrays.asList(downStreamTaskIds));
         chainedTasksMap.put(task.getTaskId(), chainedTask);
         log.debug("scheduled chain for task Id = {}", task.getTaskId());
-        return listenOnTaskResult(task.getTaskId());
+        return listenOnTaskResult(redisson, task.getTaskId());
     }
 
+    //fixme (encapsulation?) this is called from workers after done task
     public static void checkChainedTasksAfterTaskDone(RedissonClient redissonClient, String doneTask) {
         RMap<String, ChainedDistributedTask> chainedTasksMap = redissonClient.getMap(REDIS_SHARED_CHAIN_TASK_MAP);
         log.trace("chainedTasks definitions = {}", chainedTasksMap.keySet().size());
@@ -116,13 +119,16 @@ public class DistributedTaskQueue {
         return String.format("distributedTaskQueue [waitQueue = %s, workQueue = %s, chainedTasks = %s]", redisson.getQueue(REDIS_SHARED_WAIT_QUEUE), redisson.getQueue(REDIS_SHARED_WORK_QUEUE), redisson.getMap(REDIS_SHARED_CHAIN_TASK_MAP).readAllKeySet());
     }
 
-    private String getRedisAddress() {
-        //fixme refactor
-        return System.getenv("REDIS_HOST") != null ? System.getenv("SD2_REDIS_HOST") : "redis://127.0.0.1:6379";
+    /**
+     * This defaults to localhost or it can be used in containerised system via ENV property
+     * @return redis address
+     */
+    private static String getRedisAddress() {
+        return System.getenv("REDIS_HOST") != null ? System.getenv("REDIS_HOST") : "redis://127.0.0.1:6379";
     }
 
     public Object getResult(String taskId) {
-        return getResultsMap().get(taskId);
+        return getResultsMap(redisson).get(taskId);
     }
 
     /**
@@ -134,17 +140,17 @@ public class DistributedTaskQueue {
         //check result map -> we already have result
         //todo check for stucked job
         //return future with listener.. we still waiting
-        if (getResultsMap().containsKey(taskId)) {
+        if (getResultsMap(redisson).containsKey(taskId)) {
             CompletableFuture<Object> completedFuture = new CompletableFuture<>();
-            boolean complete = completedFuture.complete(getResultsMap().get(taskId));
+            boolean complete = completedFuture.complete(getResultsMap(redisson).get(taskId));
             return completedFuture;
         } else {
-            CompletableFuture<Object> future = listenOnTaskResult(taskId);
+            CompletableFuture<Object> future = listenOnTaskResult(redisson, taskId);
             return future;
         }
     }
 
-    private CompletableFuture<Object> listenOnTaskResult(String taskId) {
+    private static CompletableFuture<Object> listenOnTaskResult(RedissonClient redisson, String taskId) {
         CompletableFuture<Object> future = new CompletableFuture<>();
         RTopic taskDoneTopic = redisson.getTopic(REDISSON_DONE_TOPIC);
 
@@ -155,7 +161,7 @@ public class DistributedTaskQueue {
                 log.trace("{} on message {}", this, doneTaskId);
                 if (doneTaskId.equals(taskId)) {
                     try {
-                        future.complete(getResultsMap().get(doneTaskId));
+                        future.complete(getResultsMap(redisson).get(doneTaskId));
                     } finally {
                         taskDoneTopic.removeListener(this);
                     }
@@ -166,7 +172,7 @@ public class DistributedTaskQueue {
         return future;
     }
 
-    private RMap<String, Object> getResultsMap() {
+    private static RMap<String, Object> getResultsMap(RedissonClient redisson) {
         return redisson.getMap(REDISSON_RESULTS_MAP);
     }
 }
