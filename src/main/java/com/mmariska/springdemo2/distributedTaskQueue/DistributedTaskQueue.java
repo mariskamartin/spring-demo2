@@ -17,9 +17,9 @@ import java.util.concurrent.*;
  * Todo
  *      done - queue name handeling
  *      done - runnable/callable decorator
- *      - types handling
- *      - error handeling > maybe to future
- *      - results lifecycle (aggregation tasks? TTL?)
+ *      in - error handeling > maybe to future
+ *      - types handling > is needed ?
+ *      - results lifecycle (aggregation tasks? TTL?) > null is not stored at all
  */
 public class DistributedTaskQueue {
     private static final Logger log = LoggerFactory.getLogger(DistributedTaskDefault.class);
@@ -70,7 +70,7 @@ public class DistributedTaskQueue {
     }
 
 
-    public Future<?> offer(IDistributedTask task) {
+    public CompletableFuture<?> offer(IDistributedTask task) {
         IDistributedTask decoratedTask = new DistributedTaskDefaultDecorator(task, dtqId);
         if( ! redisson.getQueue(redisSharedWaitQueue).offer(decoratedTask.getId()) ) {
             throw new IllegalStateException("Problem with scheduling task " + decoratedTask.getId() + " - " + task);
@@ -86,13 +86,27 @@ public class DistributedTaskQueue {
         return listenOnTaskResult(decoratedTask.getId());
     }
 
-    public Future<Object> offerChain(IChainedDistributedTask task) {
+    public CompletableFuture<Object> offerChain(IChainedDistributedTask task) {
         RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(redisSharedChainTaskMap);
         ChainedDistributedTask chainedTask = new ChainedDistributedTask(task);
         chainedTask.getDownstreamTasks().addAll(Arrays.asList(task.getDownstreamTaskIds()));
         chainedTasksMap.put(task.getId(), chainedTask);
         log.debug("[{}] scheduled chain for task Id = {}", dtqId, task.getId());
         return listenOnTaskResult(task.getId());
+    }
+
+    public boolean isTaskDone(String taskId) {
+        RBatch batch = redisson.createBatch();
+        batch.getQueue(redisSharedWaitQueue).containsAsync(taskId);
+        batch.getQueue(redisSharedWorkQueue).containsAsync(taskId);
+        batch.getMap(redisSharedChainTaskMap).containsKeyAsync(taskId);
+        BatchResult<?> execute = batch.execute();
+        for (Object resp : execute.getResponses()) {
+            if ((boolean) resp) {
+                return false; //still running somewhere
+            }
+        }
+        return true; //task done
     }
 
     //fixme (encapsulation?) this is called from workers after done task
@@ -110,20 +124,6 @@ public class DistributedTaskQueue {
                 }
             }
         }
-    }
-
-    public boolean isTaskDone(String taskId) {
-        RBatch batch = redisson.createBatch();
-        batch.getQueue(redisSharedWaitQueue).containsAsync(taskId);
-        batch.getQueue(redisSharedWorkQueue).containsAsync(taskId);
-        batch.getMap(redisSharedChainTaskMap).containsKeyAsync(taskId);
-        BatchResult<?> execute = batch.execute();
-        for (Object resp : execute.getResponses()) {
-            if ((boolean) resp) {
-                return false; //still running somewhere
-            }
-        }
-        return true; //task done
     }
 
     public boolean recheckFailures() {
@@ -161,7 +161,7 @@ public class DistributedTaskQueue {
      * @param taskId
      * @return Future
      */
-    public Future<Object> getFuture(String taskId) {
+    public CompletableFuture<Object> getFuture(String taskId) {
         //check result map -> we already have result
         //todo check for stucked job
         //return future with listener.. we still waiting
@@ -186,7 +186,14 @@ public class DistributedTaskQueue {
                 log.trace("[{}] {} on message {}", dtqId, this, doneTaskId);
                 if (doneTaskId.equals(taskId)) {
                     try {
-                        future.complete(getResultsMap().get(doneTaskId));
+                        Object value = getResultsMap().get(doneTaskId);
+//                        getResultsMap().removeAsync(doneTaskId); //remove after retrieve
+
+                        if (value instanceof Throwable) {
+                            future.completeExceptionally((Throwable) value);
+                        } else {
+                            future.complete(value);
+                        }
                     } finally {
                         taskDoneTopic.removeListener(this);
                     }

@@ -7,10 +7,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.testcontainers.containers.GenericContainer;
 
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 import static org.junit.Assert.*;
 
@@ -80,7 +77,6 @@ public class DistributedTaskQueueTest {
         assertTrue(distributedTaskQueue.isTaskDone(task1.getId()));
     }
 
-
     @Test
     public void testCoexistenceOfDistributedQueues() throws ExecutionException, InterruptedException, TimeoutException {
         DistributedTaskQueue dtq1 = new DistributedTaskQueue("redis://" + redis.getContainerIpAddress() + ":" + redis.getFirstMappedPort(), "q1");
@@ -96,4 +92,16 @@ public class DistributedTaskQueueTest {
             assertTrue(true);
         }
     }
+
+    @Test
+    public void testFailTask() throws ExecutionException, InterruptedException, TimeoutException {
+        distributedTaskQueue.subscribeWorker();
+        CompletableFuture<?> taskFuture = distributedTaskQueue.offer(new TestFailTask());
+        try {
+            taskFuture.get(10, TimeUnit.SECONDS);
+        } catch (ExecutionException e) {
+            assertEquals("Just fail", e.getCause().getMessage());
+        }
+    }
+
 }
