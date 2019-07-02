@@ -1,5 +1,6 @@
 package com.mmariska.springdemo2.distributedTaskQueue;
 
+import com.mmariska.springdemo2.distributedTaskQueue.examples.DistributedTaskDefault;
 import org.redisson.Redisson;
 import org.redisson.api.*;
 import org.redisson.api.listener.MessageListener;
@@ -7,19 +8,21 @@ import org.redisson.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.*;
 
 
 /**
- * Todo - types handling
- *      in - queue name handeling
+ * Todo
+ *      done - queue name handeling
+ *      done - runnable/callable decorator
+ *      - types handling
  *      - error handeling > maybe to future
  *      - results lifecycle (aggregation tasks? TTL?)
- *      - runnable
  */
 public class DistributedTaskQueue {
-    private static final Logger log = LoggerFactory.getLogger(DistributedTaskRunnable.class);
+    private static final Logger log = LoggerFactory.getLogger(DistributedTaskDefault.class);
 
     private final String redisSharedWaitQueue; //waiting for workers
     private final String redisSharedWorkQueue; //workers already started work on these tasks
@@ -67,28 +70,29 @@ public class DistributedTaskQueue {
     }
 
 
-    public Future<?> offer(DistributedTaskRunnable task) {
-        if( ! redisson.getQueue(redisSharedWaitQueue).offer(task.getTaskId()) ) {
-            throw new IllegalStateException("Problem with scheduling task " + task.getTaskId() + " - " + task);
+    public Future<?> offer(IDistributedTask task) {
+        IDistributedTask decoratedTask = new DistributedTaskDefaultDecorator(task, dtqId);
+        if( ! redisson.getQueue(redisSharedWaitQueue).offer(decoratedTask.getId()) ) {
+            throw new IllegalStateException("Problem with scheduling task " + decoratedTask.getId() + " - " + task);
         }
         //just and schedule concrete task - queue is created on redis executor side
         ExecutorOptions options = ExecutorOptions.defaults();
         options.taskRetryInterval(0, TimeUnit.SECONDS);
         /* todo - we do not want to reschedule automatically, when all apps are down and some task is in redis, Redis will reschedule it or we can reuse of this functionality and refind job in work queue also */
         RExecutorService executorService = redisson.getExecutorService(redisSharedExecutor, options);
-        RExecutorFuture<?> future = executorService.submit(task);
-//        String taskId = future.getTaskId(); // do not use redis task id - we have problems hot to obtain taskId for chainedTasks
-        log.debug("[{}] scheduled task Id = {}", dtqId, task.getTaskId());
-        return listenOnTaskResult(task.getTaskId());
+        RExecutorFuture<?> future = executorService.submit(decoratedTask);
+//        String taskId = future.getId(); // do not use redis task id - we have problems hot to obtain taskId for chainedTasks
+        log.debug("[{}] scheduled task Id = {}", dtqId, decoratedTask.getId());
+        return listenOnTaskResult(decoratedTask.getId());
     }
 
-    public Future<Object> offerChain(DistributedTaskRunnable task, String... downStreamTaskIds) {
+    public Future<Object> offerChain(IChainedDistributedTask task) {
         RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(redisSharedChainTaskMap);
         ChainedDistributedTask chainedTask = new ChainedDistributedTask(task);
-        chainedTask.getDownstreamTasks().addAll(Arrays.asList(downStreamTaskIds));
-        chainedTasksMap.put(task.getTaskId(), chainedTask);
-        log.debug("[{}] scheduled chain for task Id = {}", dtqId, task.getTaskId());
-        return listenOnTaskResult(task.getTaskId());
+        chainedTask.getDownstreamTasks().addAll(Arrays.asList(task.getDownstreamTaskIds()));
+        chainedTasksMap.put(task.getId(), chainedTask);
+        log.debug("[{}] scheduled chain for task Id = {}", dtqId, task.getId());
+        return listenOnTaskResult(task.getId());
     }
 
     //fixme (encapsulation?) this is called from workers after done task
@@ -202,12 +206,14 @@ public class DistributedTaskQueue {
      * @param taskId
      * @return can start on task
      */
-    boolean startWorkOnTask(String taskId) {
+    public boolean startWorkOnTask(String taskId) {
         log.debug("[{}] working on task {}", dtqId, taskId);
+        log.debug("[{}] print: ", dtqId, debugPrintQueues());
         RBatch batch = redisson.createBatch();
         batch.getList(redisSharedWorkQueue).addAsync(0,taskId);
         batch.getList(redisSharedWaitQueue).removeAsync(taskId,1);
         BatchResult<Boolean> batchResult = (BatchResult<Boolean>) batch.execute();
+        log.debug("[{}] print after: ", dtqId, debugPrintQueues());
         return !batchResult.getResponses().contains(false);
     }
 
@@ -215,7 +221,7 @@ public class DistributedTaskQueue {
      * Package private, allows to call from distributed runnable (decorator)
      * @param taskId
      */
-    void stopWorkOnTask(String taskId) {
+    public void stopWorkOnTask(String taskId) {
         log.debug("[{}] stop working on task {}", dtqId, taskId);
         redisson.getQueue(redisSharedWorkQueue).remove(taskId);
         redisson.getTopic(redissonDoneTopic).publish(taskId);
@@ -226,9 +232,31 @@ public class DistributedTaskQueue {
      * @param taskId
      * @param result
      */
-    void storeResults(String taskId, long result) {
+    public void storeResults(String taskId, Object result) {
         log.trace("[{}] write result to redis resultMap <taskId, results>", dtqId);
         RMap<String, Object> results = redisson.getMap(redissonResultsMap);
         results.put(taskId, result);
+    }
+
+
+    /**
+     * Compose chained task for internal usage
+     */
+    public static class ChainedDistributedTask implements Serializable {
+        private final IDistributedTask task;
+        private final Set<String> downstreamTasks;
+
+        public ChainedDistributedTask(IDistributedTask task) {
+            this.task = task;
+            this.downstreamTasks = new HashSet<>();
+        }
+
+        public Set<String> getDownstreamTasks() {
+            return downstreamTasks;
+        }
+
+        public IDistributedTask getTask() {
+            return task;
+        }
     }
 }

@@ -1,6 +1,10 @@
 package com.mmariska.springdemo2;
 
 import com.mmariska.springdemo2.distributedTaskQueue.*;
+import com.mmariska.springdemo2.distributedTaskQueue.examples.AggregationDistributedTaskRunnable;
+import com.mmariska.springdemo2.distributedTaskQueue.examples.DistributedTaskDefault;
+import com.mmariska.springdemo2.distributedTaskQueue.examples.ExampleSimpleTask;
+import com.mmariska.springdemo2.distributedTaskQueue.examples.LongDistributedTaskRunnable;
 import org.redisson.Redisson;
 import org.redisson.api.*;
 import org.redisson.api.listener.MessageListener;
@@ -48,13 +52,14 @@ public class RedisController {
         // Default is 5 minutes
         options.taskRetryInterval(10, TimeUnit.MINUTES);
 
-        RExecutorService executorService = redisson.getExecutorService("myExecutor", options);
-        Future<Long> future = executorService.submit(new CallableTask());
-
-        String taskId = ((RExecutorFuture<Long>) future).getTaskId();
-        log.info("started taskId = " + taskId);
-
-        Long result = future.get();
+//        RExecutorService executorService = redisson.getExecutorService("myExecutor", options);
+//        Future<Long> future = executorService.submit(new CallableTask());
+//
+//        String taskId = ((RExecutorFuture<Long>) future).getTaskId();
+//        log.info("started taskId = " + taskId);
+//
+//        Long result = future.get();
+        long result = 0L;
         return "("+ System.getenv("MY_POD_NAME") + ") result from redisson myExecutor Long = " + result;
     }
 
@@ -185,7 +190,8 @@ public class RedisController {
 
     @RequestMapping(value="/driver/3", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String driver3() {
-        return "offer fail task - taskId = " + distributedTaskQueue.offer(new FailDistributedTaskRunnable());
+//        return "offer fail task - taskId = " + distributedTaskQueue.offer(new FailDistributedTaskRunnable());
+        return "offer fail task - taskId = " + distributedTaskQueue.offer(new ExampleSimpleTask());
     }
 
     @RequestMapping(value="/result/{taskId}", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
@@ -195,24 +201,30 @@ public class RedisController {
 
     @RequestMapping(value="/driver/agg", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String driver0() throws InterruptedException, ExecutionException {
-        DistributedTaskRunnable task1 = new LongDistributedTaskRunnable();
+        DistributedTaskDefault task1 = new LongDistributedTaskRunnable();
         distributedTaskQueue.offer(task1);
-        DistributedTaskRunnable task2 = new LongDistributedTaskRunnable();
+        DistributedTaskDefault task2 = new LongDistributedTaskRunnable();
         distributedTaskQueue.offer(task2);
-        AggregationDistributedTaskRunnable taskAgg = new AggregationDistributedTaskRunnable(task1.getTaskId(), task2.getTaskId());
-        Future<Object> aggregFuture = distributedTaskQueue.offerChain(taskAgg, task1.getTaskId(), task2.getTaskId());
-        return "offer tasks with aggregation - donwstream taskIds = " + Arrays.asList(task1, task2, taskAgg.getTaskId()) + " agg result = " + aggregFuture.get();
+        AggregationDistributedTaskRunnable taskAgg = new AggregationDistributedTaskRunnable(task1.getId(), task2.getId());
+        Future<Object> aggregFuture = distributedTaskQueue.offerChain(taskAgg);
+        return "offer tasks with aggregation - donwstream taskIds = " + Arrays.asList(task1, task2, taskAgg.getId()) + " agg result = " + aggregFuture.get();
     }
 
     @RequestMapping(value="/driver/1", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String driver1() throws InterruptedException, ExecutionException {
-        DistributedTaskRunnable task1 = new DistributedTaskRunnable();
+        DistributedTaskDefault task1 = new DistributedTaskDefault();
         Future<?> task1result = distributedTaskQueue.offer(task1);
-        DistributedTaskRunnable task2 = new DistributedTaskRunnable();
+        DistributedTaskDefault task2 = new DistributedTaskDefault();
         Future<?> task2result = distributedTaskQueue.offer(task2);
-        AggregationDistributedTaskRunnable taskAgg = new AggregationDistributedTaskRunnable(task1.getTaskId(), task2.getTaskId());
-        distributedTaskQueue.offerChain(taskAgg, task1.getTaskId(), task2.getTaskId());
-        return String.format("offer case: %s + %s = %s",  task1.getTaskId(), task2.getTaskId(), taskAgg.getTaskId());
+        AggregationDistributedTaskRunnable taskAgg = new AggregationDistributedTaskRunnable(task1.getId(), task2.getId());
+        distributedTaskQueue.offerChain(taskAgg);
+        return String.format("offer case: %s + %s = %s",  task1.getId(), task2.getId(), taskAgg.getId());
+    }
+
+    @RequestMapping(value="/driver/s", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
+    private String driverS() throws InterruptedException, ExecutionException {
+        Future<?> future = distributedTaskQueue.offer(new ExampleSimpleTask());
+        return String.format("offer case: %s + %s = %s",  future.get());
     }
 
 }

@@ -1,6 +1,6 @@
 package com.mmariska;
 
-import com.mmariska.springdemo2.distributedTaskQueue.AggregationDistributedTaskRunnable;
+import com.mmariska.springdemo2.distributedTaskQueue.examples.AggregationDistributedTaskRunnable;
 
 public class TestAggregatedDistributedTask extends AggregationDistributedTaskRunnable {
 

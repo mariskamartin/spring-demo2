@@ -1,23 +1,18 @@
 package com.mmariska;
 
-import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskRunnable;
+import com.mmariska.springdemo2.distributedTaskQueue.examples.DistributedTaskDefault;
 
-public class TestDistributedTask extends DistributedTaskRunnable {
+public class TestDistributedTask extends DistributedTaskDefault {
 
     private long result;
 
-
     public TestDistributedTask(long result) {
-        this(result, null);
-    }
-
-    public TestDistributedTask(long result, String dtqId) {
-        super("test-dist-job-", dtqId);
+        super("test-dist-job-");
         this.result = result;
     }
 
     @Override
     protected long process() {
-        return this.result;
+        return this.result; //just return
     }
 }
