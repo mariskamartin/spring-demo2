@@ -1,6 +1,6 @@
 package com.mmariska.springdemo2.distributedTaskQueue.examples;
 
-public class LongDistributedTaskRunnable extends DistributedTaskDefault {
+public class LongSleepingDistributedTaskRunnable extends SleepingDistributedTask {
 
     @Override
     protected long getSleepInMs() {

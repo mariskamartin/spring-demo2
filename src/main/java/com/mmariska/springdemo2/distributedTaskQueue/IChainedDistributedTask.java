@@ -4,5 +4,5 @@ import java.util.Map;
 
 public interface IChainedDistributedTask extends IDistributedTask {
     String[] getDownstreamTaskIds();
-    void setDownstreamResults(Map<String, Object> results);
+    void injectResults(Map<String, Object> results);
 }

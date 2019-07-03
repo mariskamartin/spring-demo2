@@ -1,10 +1,10 @@
 package com.mmariska.springdemo2;
 
 import com.mmariska.springdemo2.distributedTaskQueue.*;
-import com.mmariska.springdemo2.distributedTaskQueue.examples.AggregationDistributedTaskRunnable;
-import com.mmariska.springdemo2.distributedTaskQueue.examples.DistributedTaskDefault;
+import com.mmariska.springdemo2.distributedTaskQueue.examples.AggregationSleepingDistributedTaskRunnable;
+import com.mmariska.springdemo2.distributedTaskQueue.examples.SleepingDistributedTask;
 import com.mmariska.springdemo2.distributedTaskQueue.examples.ExampleSimpleTask;
-import com.mmariska.springdemo2.distributedTaskQueue.examples.LongDistributedTaskRunnable;
+import com.mmariska.springdemo2.distributedTaskQueue.examples.LongSleepingDistributedTaskRunnable;
 import org.redisson.Redisson;
 import org.redisson.api.*;
 import org.redisson.api.listener.MessageListener;
@@ -185,7 +185,7 @@ public class RedisController {
 
     @RequestMapping(value="/driver/2", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String driver2() {
-        return "offer long task - taskId = " + distributedTaskQueue.offer(new LongDistributedTaskRunnable());
+        return "offer long task - taskId = " + distributedTaskQueue.offer(new LongSleepingDistributedTaskRunnable());
     }
 
     @RequestMapping(value="/driver/3", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
@@ -201,22 +201,22 @@ public class RedisController {
 
     @RequestMapping(value="/driver/agg", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String driver0() throws InterruptedException, ExecutionException {
-        DistributedTaskDefault task1 = new LongDistributedTaskRunnable();
+        SleepingDistributedTask task1 = new LongSleepingDistributedTaskRunnable();
         distributedTaskQueue.offer(task1);
-        DistributedTaskDefault task2 = new LongDistributedTaskRunnable();
+        SleepingDistributedTask task2 = new LongSleepingDistributedTaskRunnable();
         distributedTaskQueue.offer(task2);
-        AggregationDistributedTaskRunnable taskAgg = new AggregationDistributedTaskRunnable(task1.getId(), task2.getId());
-        Future<Object> aggregFuture = distributedTaskQueue.offerChain(taskAgg);
+        AggregationSleepingDistributedTaskRunnable taskAgg = new AggregationSleepingDistributedTaskRunnable(task1.getId(), task2.getId());
+        CompletableFuture<Object> aggregFuture = distributedTaskQueue.offerChain(taskAgg);
         return "offer tasks with aggregation - donwstream taskIds = " + Arrays.asList(task1, task2, taskAgg.getId()) + " agg result = " + aggregFuture.get();
     }
 
     @RequestMapping(value="/driver/1", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String driver1() throws InterruptedException, ExecutionException {
-        DistributedTaskDefault task1 = new DistributedTaskDefault();
+        SleepingDistributedTask task1 = new SleepingDistributedTask();
         Future<?> task1result = distributedTaskQueue.offer(task1);
-        DistributedTaskDefault task2 = new DistributedTaskDefault();
+        SleepingDistributedTask task2 = new SleepingDistributedTask();
         Future<?> task2result = distributedTaskQueue.offer(task2);
-        AggregationDistributedTaskRunnable taskAgg = new AggregationDistributedTaskRunnable(task1.getId(), task2.getId());
+        AggregationSleepingDistributedTaskRunnable taskAgg = new AggregationSleepingDistributedTaskRunnable(task1.getId(), task2.getId());
         distributedTaskQueue.offerChain(taskAgg);
         return String.format("offer case: %s + %s = %s",  task1.getId(), task2.getId(), taskAgg.getId());
     }

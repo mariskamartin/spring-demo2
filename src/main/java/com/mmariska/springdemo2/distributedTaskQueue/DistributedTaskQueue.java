@@ -1,6 +1,6 @@
 package com.mmariska.springdemo2.distributedTaskQueue;
 
-import com.mmariska.springdemo2.distributedTaskQueue.examples.DistributedTaskDefault;
+import com.mmariska.springdemo2.distributedTaskQueue.examples.SleepingDistributedTask;
 import org.redisson.Redisson;
 import org.redisson.api.*;
 import org.redisson.api.listener.MessageListener;
@@ -22,7 +22,7 @@ import java.util.concurrent.*;
  *      - results lifecycle (aggregation tasks? TTL?) > null is not stored at all
  */
 public class DistributedTaskQueue {
-    private static final Logger log = LoggerFactory.getLogger(DistributedTaskDefault.class);
+    private static final Logger log = LoggerFactory.getLogger(SleepingDistributedTask.class);
 
     private final String redisSharedWaitQueue; //waiting for workers
     private final String redisSharedWorkQueue; //workers already started work on these tasks
@@ -30,7 +30,6 @@ public class DistributedTaskQueue {
     private final String redissonTaskMap; // scheduled task objects
     private final String redissonResultsMap;
     private final String redissonDoneTopic;
-    private final String redisSharedExecutor;
     private final String dtqId;
     private final RedissonClient redisson;
 
@@ -55,7 +54,6 @@ public class DistributedTaskQueue {
     public DistributedTaskQueue(RedissonClient redisson, String uniqueName) {
         this.redisson = redisson;
         dtqId = uniqueName != null ? uniqueName : "defaultDtq";
-        redisSharedExecutor = dtqId + "QueueExecutor";
         redisSharedWaitQueue = dtqId + "WaitQueue";
         redisSharedWorkQueue = dtqId + "WorkQueue";
         redisSharedChainTaskMap = dtqId + "ChainedTasks";
@@ -65,16 +63,9 @@ public class DistributedTaskQueue {
     }
 
     public boolean subscribeWorker() {
-//        RExecutorService executorService = redisson.getExecutorService(redisSharedExecutor, ExecutorOptions.defaults());
         ExecutorService executor = Executors.newFixedThreadPool(1);
         executor.submit(new QueueWorker(this));
-        //        executorService.registerWorkers(1, executor);
         return true; //for now there is no more logic around
-    }
-
-    public IDistributedTask takeTask() throws InterruptedException {
-        String taskId = getPriorityBlockingWaitingQueue().takeLastAndOfferFirstTo(redisSharedWorkQueue);
-        return getTaskObjectMap().get(taskId);
     }
 
     private RMap<String, IDistributedTask> getTaskObjectMap() {
@@ -86,24 +77,13 @@ public class DistributedTaskQueue {
     }
 
 
-    public CompletableFuture<?> offer(IDistributedTask task) {
-        // wait queue could be priority and work queue could be blocking.. who is responsible for scheduling task
-        // who will be submitting tasks? from wait queue?
-        IDistributedTask decoratedTask = new DistributedTaskDefaultDecorator(task, dtqId);
-        if( ! getPriorityBlockingWaitingQueue().offer(decoratedTask.getId()) ) {
-            throw new IllegalStateException("Problem with scheduling task " + decoratedTask.getId() + " - " + task);
+    public CompletableFuture<Object> offer(IDistributedTask task) {
+        if(!getPriorityBlockingWaitingQueue().offer(task.getId()) ) {
+            throw new IllegalStateException("Problem with scheduling task " + task.getId() + " - " + task);
         }
-        getTaskObjectMap().put(task.getId(), decoratedTask); //store object for later execution
-
-        // just and schedule concrete task - queue is created on redis executor side
-//        ExecutorOptions options = ExecutorOptions.defaults();
-//        options.taskRetryInterval(0, TimeUnit.SECONDS);
-        /* todo - we do not want to reschedule automatically, when all apps are down and some task is in redis, Redis will reschedule it or we can reuse of this functionality and refind job in work queue also */
-//        RExecutorService executorService = redisson.getExecutorService(redisSharedExecutor, options);
-//        RExecutorFuture<?> future = executorService.submit(decoratedTask);
-//        String taskId = future.getId(); // do not use redis task id - we have problems hot to obtain taskId for chainedTasks
-        log.debug("[{}] scheduled task Id = {}", dtqId, decoratedTask.getId());
-        return listenOnTaskResult(decoratedTask.getId());
+        getTaskObjectMap().put(task.getId(), task); //store object for later execution
+        log.debug("[{}] scheduled task Id = {}", dtqId, task.getId());
+        return listenOnTaskResult(task.getId());
     }
 
     public CompletableFuture<Object> offerChain(IChainedDistributedTask task) {
@@ -130,7 +110,7 @@ public class DistributedTaskQueue {
     }
 
     //fixme (encapsulation?) this is called from workers after done task
-    public void checkChainedTasksAfterTaskDone(String doneTask) {
+    public void checkChainedTasks(String doneTask) {
         RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(redisSharedChainTaskMap);
         log.trace("[{}] chainedTasks definitions = {}", dtqId, chainedTasksMap.keySet().size());
         for (Map.Entry<String, ChainedDistributedTask> entry : chainedTasksMap.entrySet()) {
@@ -157,7 +137,7 @@ public class DistributedTaskQueue {
      * @return
      */
     public String debugPrintQueues() {
-        return String.format("distributedTaskQueue [waitQueue = %s, workQueue = %s, chainedTasks = %s]", redisson.getQueue(redisSharedWaitQueue), redisson.getQueue(redisSharedWorkQueue), redisson.getMap(redisSharedChainTaskMap).readAllKeySet());
+        return String.format("distributedTaskQueue [waitQueue = %s, workQueue = %s, chainedTasks = %s]", getPriorityBlockingWaitingQueue(), redisson.getQueue(redisSharedWorkQueue), redisson.getMap(redisSharedChainTaskMap).readAllKeySet());
     }
 
     /**
@@ -228,43 +208,32 @@ public class DistributedTaskQueue {
         return redisson.getMapCache(redissonResultsMap);
     }
 
-    /**
-     * Package private, allows to call from distributed runnable (decorator)
-     * @param taskId
-     * @return can start on task
-     */
-    public boolean startWorkOnTask(String taskId) {
-        log.debug("[{}] working on task {}", dtqId, taskId);
-        log.debug("[{}] print: ", dtqId, debugPrintQueues());
-//        RBatch batch = redisson.createBatch();
-//        batch.getList(redisSharedWorkQueue).addAsync(0,taskId);
-//        batch.getList(redisSharedWaitQueue).removeAsync(taskId,1);
-//        BatchResult<Boolean> batchResult = (BatchResult<Boolean>) batch.execute();
-//        log.debug("[{}] print after: ", dtqId, debugPrintQueues());
-//        return !batchResult.getResponses().contains(false);
-        return true;
+
+    public IDistributedTask workerTakeTaskBlocking() throws InterruptedException {
+        String taskId = getPriorityBlockingWaitingQueue().takeLastAndOfferFirstTo(redisSharedWorkQueue);
+        log.debug("worker {} take task {}", this, taskId);
+        if (taskId == null)
+            throw new IllegalStateException("after take is taskId null!");
+        IDistributedTask task = getTaskObjectMap().get(taskId);
+        if (task == null)
+            throw new IllegalStateException("after take task is null! for taskId = " + taskId);
+        return task;
     }
 
-    /**
-     * Package private, allows to call from distributed runnable (decorator)
-     * @param taskId
-     */
-    public void stopWorkOnTask(String taskId) {
-        log.debug("[{}] stop working on task {}", dtqId, taskId);
+    public void workerSuccessfullyEnd(String taskId) {
+        log.debug("[{}] end working on task {}", dtqId, taskId);
         redisson.getQueue(redisSharedWorkQueue).remove(taskId);
-        redisson.getTopic(redissonDoneTopic).publish(taskId);
         getTaskObjectMap().remove(taskId);
     }
 
-    /**
-     * Package private, allows to call from distributed runnable (decorator)
-     * @param taskId
-     * @param result
-     */
-    public void storeResults(String taskId, Object result) {
+    public void workerPublishDone(String taskId) {
+        log.debug("[{}] publish done for task {}", dtqId, taskId);
+        redisson.getTopic(redissonDoneTopic).publish(taskId);
+    }
+
+    public void workerStoreResults(String taskId, Object result) {
         log.trace("[{}] write result to redis resultMap <taskId, results>", dtqId);
-        RMap<String, Object> results = redisson.getMapCache(redissonResultsMap);
-        results.put(taskId, result);
+        getResultsMap().put(taskId, result);
     }
 
     /**

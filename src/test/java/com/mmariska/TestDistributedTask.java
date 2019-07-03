@@ -1,8 +1,9 @@
 package com.mmariska;
 
-import com.mmariska.springdemo2.distributedTaskQueue.examples.DistributedTaskDefault;
+import com.mmariska.springdemo2.distributedTaskQueue.AbstractDistributedTask;
+import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
 
-public class TestDistributedTask extends DistributedTaskDefault {
+public class TestDistributedTask extends AbstractDistributedTask {
 
     private long result;
 
@@ -12,7 +13,8 @@ public class TestDistributedTask extends DistributedTaskDefault {
     }
 
     @Override
-    protected long process() {
-        return this.result; //just return
+    public Object call(DistributedTaskQueue distributedTaskQueue) {
+        return this.result;
     }
+
 }

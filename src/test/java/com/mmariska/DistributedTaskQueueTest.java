@@ -45,8 +45,21 @@ public class DistributedTaskQueueTest {
     public void testSimpleOfferAndProcessChainedTask() throws ExecutionException, InterruptedException, TimeoutException {
         distributedTaskQueue.subscribeWorker();
         TestDistributedTask testDistributedTask1 = new TestDistributedTask(1);
-        distributedTaskQueue.offer(testDistributedTask1);
         TestDistributedTask testDistributedTask2 = new TestDistributedTask(2);
+        // here it cares on order
+        Future<?> futureAggregatedResult = distributedTaskQueue.offerChain(new TestAggregatedDistributedTask(testDistributedTask1.getId(), testDistributedTask2.getId()));
+        distributedTaskQueue.offer(testDistributedTask1);
+        distributedTaskQueue.offer(testDistributedTask2);
+        assertEquals("chained result correctly processed", 3L, futureAggregatedResult.get(10, TimeUnit.SECONDS));
+    }
+
+    @Test
+    public void testOfferAndProcessChainedTaskOfferedEarlier() throws ExecutionException, InterruptedException, TimeoutException {
+        distributedTaskQueue.subscribeWorker();
+        TestDistributedTask testDistributedTask1 = new TestDistributedTask(1);
+        TestDistributedTask testDistributedTask2 = new TestDistributedTask(2);
+        // here, worker process first task earlier than we register chain
+        distributedTaskQueue.offer(testDistributedTask1);
         distributedTaskQueue.offer(testDistributedTask2);
         Future<?> futureAggregatedResult = distributedTaskQueue.offerChain(new TestAggregatedDistributedTask(testDistributedTask1.getId(), testDistributedTask2.getId()));
         assertEquals("chained result correctly processed", 3L, futureAggregatedResult.get(10, TimeUnit.SECONDS));
@@ -56,11 +69,13 @@ public class DistributedTaskQueueTest {
     public void testGetFutureForTaskAgain() throws ExecutionException, InterruptedException, TimeoutException {
         distributedTaskQueue.subscribeWorker();
         TestDistributedTask testDistributedTask1 = new TestDistributedTask(5);
-        distributedTaskQueue.offer(testDistributedTask1);
         TestDistributedTask testDistributedTask2 = new TestDistributedTask(2);
-        distributedTaskQueue.offer(testDistributedTask2);
         TestAggregatedDistributedTask aggTask = new TestAggregatedDistributedTask(testDistributedTask1.getId(), testDistributedTask2.getId());
+        // here also care on order
+        // here is a case when first job is done earlier than chain Job and worker has no chance to find it in chain jobs
         Future<?> futureAggregatedResult = distributedTaskQueue.offerChain(aggTask);
+        distributedTaskQueue.offer(testDistributedTask1);
+        distributedTaskQueue.offer(testDistributedTask2);
         Future<Object> aggFuture2 = distributedTaskQueue.getFuture(aggTask.getId());
         assertEquals("chained result correctly processed", 7L, futureAggregatedResult.get(10, TimeUnit.SECONDS));
         assertEquals("chained result correctly processed and returned again", 7L, aggFuture2.get(10, TimeUnit.SECONDS));
