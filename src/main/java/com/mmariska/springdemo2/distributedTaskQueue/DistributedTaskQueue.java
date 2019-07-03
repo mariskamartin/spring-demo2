@@ -27,6 +27,7 @@ public class DistributedTaskQueue {
     private final String redisSharedWaitQueue; //waiting for workers
     private final String redisSharedWorkQueue; //workers already started work on these tasks
     private final String redisSharedChainTaskMap;
+    private final String redissonTaskMap; // scheduled task objects
     private final String redissonResultsMap;
     private final String redissonDoneTopic;
     private final String redisSharedExecutor;
@@ -58,29 +59,48 @@ public class DistributedTaskQueue {
         redisSharedWaitQueue = dtqId + "WaitQueue";
         redisSharedWorkQueue = dtqId + "WorkQueue";
         redisSharedChainTaskMap = dtqId + "ChainedTasks";
+        redissonTaskMap = dtqId + "TaskObjectsMap";
         redissonResultsMap = dtqId + "Results";
         redissonDoneTopic = dtqId + "DoneTopic";
     }
 
     public boolean subscribeWorker() {
-        RExecutorService executorService = redisson.getExecutorService(redisSharedExecutor, ExecutorOptions.defaults());
+//        RExecutorService executorService = redisson.getExecutorService(redisSharedExecutor, ExecutorOptions.defaults());
         ExecutorService executor = Executors.newFixedThreadPool(1);
-        executorService.registerWorkers(1, executor);
+        executor.submit(new QueueWorker(this));
+        //        executorService.registerWorkers(1, executor);
         return true; //for now there is no more logic around
+    }
+
+    public IDistributedTask takeTask() throws InterruptedException {
+        String taskId = getPriorityBlockingWaitingQueue().takeLastAndOfferFirstTo(redisSharedWorkQueue);
+        return getTaskObjectMap().get(taskId);
+    }
+
+    private RMap<String, IDistributedTask> getTaskObjectMap() {
+        return redisson.<String, IDistributedTask>getMap(redissonTaskMap);
+    }
+
+    private RPriorityBlockingQueue<String> getPriorityBlockingWaitingQueue() {
+        return redisson.<String>getPriorityBlockingQueue(redisSharedWaitQueue);
     }
 
 
     public CompletableFuture<?> offer(IDistributedTask task) {
+        // wait queue could be priority and work queue could be blocking.. who is responsible for scheduling task
+        // who will be submitting tasks? from wait queue?
         IDistributedTask decoratedTask = new DistributedTaskDefaultDecorator(task, dtqId);
-        if( ! redisson.getQueue(redisSharedWaitQueue).offer(decoratedTask.getId()) ) {
+        if( ! getPriorityBlockingWaitingQueue().offer(decoratedTask.getId()) ) {
             throw new IllegalStateException("Problem with scheduling task " + decoratedTask.getId() + " - " + task);
         }
-        //just and schedule concrete task - queue is created on redis executor side
-        ExecutorOptions options = ExecutorOptions.defaults();
-        options.taskRetryInterval(0, TimeUnit.SECONDS);
+        getTaskObjectMap().put(task.getId(), decoratedTask); //store object for later execution
+
+        // just and schedule concrete task - queue is created on redis executor side
+//        ExecutorOptions options = ExecutorOptions.defaults();
+//        options.taskRetryInterval(0, TimeUnit.SECONDS);
         /* todo - we do not want to reschedule automatically, when all apps are down and some task is in redis, Redis will reschedule it or we can reuse of this functionality and refind job in work queue also */
-        RExecutorService executorService = redisson.getExecutorService(redisSharedExecutor, options);
-        RExecutorFuture<?> future = executorService.submit(decoratedTask);
+//        RExecutorService executorService = redisson.getExecutorService(redisSharedExecutor, options);
+//        RExecutorFuture<?> future = executorService.submit(decoratedTask);
 //        String taskId = future.getId(); // do not use redis task id - we have problems hot to obtain taskId for chainedTasks
         log.debug("[{}] scheduled task Id = {}", dtqId, decoratedTask.getId());
         return listenOnTaskResult(decoratedTask.getId());
@@ -216,12 +236,13 @@ public class DistributedTaskQueue {
     public boolean startWorkOnTask(String taskId) {
         log.debug("[{}] working on task {}", dtqId, taskId);
         log.debug("[{}] print: ", dtqId, debugPrintQueues());
-        RBatch batch = redisson.createBatch();
-        batch.getList(redisSharedWorkQueue).addAsync(0,taskId);
-        batch.getList(redisSharedWaitQueue).removeAsync(taskId,1);
-        BatchResult<Boolean> batchResult = (BatchResult<Boolean>) batch.execute();
-        log.debug("[{}] print after: ", dtqId, debugPrintQueues());
-        return !batchResult.getResponses().contains(false);
+//        RBatch batch = redisson.createBatch();
+//        batch.getList(redisSharedWorkQueue).addAsync(0,taskId);
+//        batch.getList(redisSharedWaitQueue).removeAsync(taskId,1);
+//        BatchResult<Boolean> batchResult = (BatchResult<Boolean>) batch.execute();
+//        log.debug("[{}] print after: ", dtqId, debugPrintQueues());
+//        return !batchResult.getResponses().contains(false);
+        return true;
     }
 
     /**
@@ -232,6 +253,7 @@ public class DistributedTaskQueue {
         log.debug("[{}] stop working on task {}", dtqId, taskId);
         redisson.getQueue(redisSharedWorkQueue).remove(taskId);
         redisson.getTopic(redissonDoneTopic).publish(taskId);
+        getTaskObjectMap().remove(taskId);
     }
 
     /**
@@ -244,7 +266,6 @@ public class DistributedTaskQueue {
         RMap<String, Object> results = redisson.getMapCache(redissonResultsMap);
         results.put(taskId, result);
     }
-
 
     /**
      * Compose chained task for internal usage

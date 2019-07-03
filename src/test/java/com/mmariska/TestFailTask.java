@@ -1,7 +1,9 @@
 package com.mmariska;
 
 import com.mmariska.springdemo2.LoggingTraceRepository;
+import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
 import com.mmariska.springdemo2.distributedTaskQueue.IDistributedTask;
+import org.omg.CORBA.Object;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,7 +23,7 @@ public class TestFailTask implements IDistributedTask {
     }
 
     @Override
-    public Long call() throws Exception {
+    public Object call(DistributedTaskQueue distributedTaskQueue) {
         log.info("test task called and fail");
         throw new IllegalStateException("Just fail");
     }

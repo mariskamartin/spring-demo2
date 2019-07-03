@@ -1,5 +1,6 @@
 package com.mmariska.springdemo2.distributedTaskQueue.examples;
 
+import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
 import com.mmariska.springdemo2.distributedTaskQueue.IDistributedTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +25,7 @@ public class DistributedTaskDefault implements IDistributedTask {
     }
 
     @Override
-    public Object call() {
+    public Object call(DistributedTaskQueue distributedTaskQueue) {
         return process();
     }
 

@@ -1,6 +1,5 @@
 package com.mmariska.springdemo2;
 
-import com.mmariska.springdemo2.domain.Widget;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -10,9 +9,6 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.lang.ref.WeakReference;
-import java.time.temporal.UnsupportedTemporalTypeException;
-import java.util.Collection;
-import java.util.LinkedList;
 import java.util.Vector;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

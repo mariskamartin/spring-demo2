@@ -16,9 +16,6 @@ public class DistributedTaskDefaultDecorator implements IDistributedTask {
     private final IDistributedTask decoratedTask;
     private final String taskId;
 
-    @RInject
-    private RedissonClient redisson;
-
     public DistributedTaskDefaultDecorator(IDistributedTask decoratedTask, String dtqId) {
         this.dtqId = dtqId;
         this.decoratedTask = decoratedTask;
@@ -31,8 +28,7 @@ public class DistributedTaskDefaultDecorator implements IDistributedTask {
     }
 
     @Override
-    public Object call() {
-        DistributedTaskQueue distributedTaskQueue = new DistributedTaskQueue(redisson, dtqId);
+    public Object call(DistributedTaskQueue distributedTaskQueue) {
         if (taskId == null)
             throw new IllegalStateException("Task is executed without taskId.");
         if (!distributedTaskQueue.startWorkOnTask(taskId))
@@ -49,7 +45,7 @@ public class DistributedTaskDefaultDecorator implements IDistributedTask {
                 }
                 decoratedTask.setDownstreamResults(results);
             }
-            result = decoratedTask.call();
+            result = decoratedTask.call(distributedTaskQueue);
             // end client task part
         } catch (Exception e) { // when something went wrong store it for later execution
             result = e;
