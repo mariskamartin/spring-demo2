@@ -7,8 +7,12 @@ import com.mmariska.springdemo2.distributedTaskQueue.examples.HighPriorityExampl
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.redisson.api.listener.MessageListener;
 import org.testcontainers.containers.GenericContainer;
 
+import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.concurrent.*;
 
 import static org.junit.Assert.*;
@@ -159,6 +163,33 @@ public class DistributedTaskQueueTest {
         assertEquals(task2.getId(), iDistributedTask.getId());
         iDistributedTask = distributedTaskQueue.workerPoolLastTaskBlocking();
         assertEquals(task3.getId(), iDistributedTask.getId());
+    }
+
+    @Test
+    public void testExecutionInOrderOfTaskWithChain() throws ExecutionException, InterruptedException, TimeoutException {
+        IDistributedTask task1 = new TestDistributedTask(1,"task1-");
+        TestAggregatedDistributedTask taskAgg = new TestAggregatedDistributedTask(task1.getId());
+        Thread.sleep(2);
+        IDistributedTask task2 = new TestDistributedTask(1,"task2-");
+        Thread.sleep(2);
+        IDistributedTask task3 = new TestDistributedTask(1,"task3-");
+        CompletableFuture<Object> completableFuture = distributedTaskQueue.offerChain(taskAgg);
+        distributedTaskQueue.offer(task1);
+        distributedTaskQueue.offer(task2);
+        CompletableFuture<Object> offer3 = distributedTaskQueue.offer(task3);
+
+        List<String> doneTasks = new LinkedList<>();
+        distributedTaskQueue.subscribeListenerOnDoneTask(new MessageListener<String>() {
+            @Override
+            public void onMessage(CharSequence channel, String msg) {
+                doneTasks.add(msg);
+            }
+        });
+
+        distributedTaskQueue.subscribeWorker();
+        assertEquals(1L, completableFuture.get()) ;
+        assertEquals(1L, offer3.get()) ;
+        assertEquals(Arrays.asList(task1.getId(), taskAgg.getId(), task2.getId(), task3.getId()), doneTasks) ;
     }
 
 

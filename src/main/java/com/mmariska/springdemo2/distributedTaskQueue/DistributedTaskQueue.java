@@ -147,7 +147,10 @@ public class DistributedTaskQueue {
      * @return
      */
     public String debugPrintQueues() {
-        return String.format("distributedTaskQueue [waitQueue = %s, workQueue = %s, chainedTasks = %s]", getPriorityBlockingWaitingQueue(), redisson.getQueue(redisSharedWorkQueue), redisson.getMap(redisSharedChainTaskMap).readAllKeySet());
+        return String.format("distributedTaskQueue [waitQueue = %s, workQueue = %s, chainedTasks = %s]",
+                getPriorityBlockingWaitingQueue().stream().map(t -> t.getId()).collect(Collectors.toList()),
+                getWorkQueue().stream().map(t -> t.getId()).collect(Collectors.toList()),
+                redisson.getMap(redisSharedChainTaskMap).readAllKeySet());
     }
 
     /**
@@ -257,6 +260,10 @@ public class DistributedTaskQueue {
 
     public void workerStoreError(String taskId, Exception e) {
         getResultsMap().put(taskId, e, 20, TimeUnit.MINUTES);
+    }
+
+    public void subscribeListenerOnDoneTask(MessageListener<String> messageListener) {
+        redisson.getTopic(redissonDoneTopic).addListener(String.class, messageListener);
     }
 
     /**
