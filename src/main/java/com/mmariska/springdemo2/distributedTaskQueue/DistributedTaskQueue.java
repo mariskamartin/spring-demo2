@@ -1,6 +1,5 @@
 package com.mmariska.springdemo2.distributedTaskQueue;
 
-import com.mmariska.springdemo2.distributedTaskQueue.examples.SleepingDistributedTask;
 import org.redisson.Redisson;
 import org.redisson.api.*;
 import org.redisson.api.listener.MessageListener;
@@ -10,7 +9,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 
@@ -25,7 +27,7 @@ import java.util.stream.Collectors;
  *      - types handling > is needed ?
  */
 public class DistributedTaskQueue {
-    private static final Logger log = LoggerFactory.getLogger(SleepingDistributedTask.class);
+    private static final Logger log = LoggerFactory.getLogger(DistributedTaskQueue.class);
 
     private final String redisSharedWaitQueue; //waiting for workers
     private final String redisSharedWorkQueue; //workers already started work on these tasks
@@ -61,6 +63,7 @@ public class DistributedTaskQueue {
         redisSharedChainTaskMap = dtqId + "ChainedTasks";
         redissonResultsMap = dtqId + "Results";
         redissonDoneTopic = dtqId + "DoneTopic";
+        if (getPriorityBlockingWaitingQueue().isEmpty()) getPriorityBlockingWaitingQueue().trySetComparator(new PriorityTaskComparator());
     }
 
     public boolean subscribeWorker() {
@@ -72,7 +75,8 @@ public class DistributedTaskQueue {
 
     public CompletableFuture<Object> offer(IDistributedTask task) {
         RPriorityBlockingQueue<IDistributedTask> priorityBlockingWaitingQueue = getPriorityBlockingWaitingQueue();
-        if (priorityBlockingWaitingQueue.isEmpty()) priorityBlockingWaitingQueue.trySetComparator(new PriorityTaskIdComparator());
+        // when queue is empty redis will destroy it also with comparator
+        if (getPriorityBlockingWaitingQueue().isEmpty()) getPriorityBlockingWaitingQueue().trySetComparator(new PriorityTaskComparator());
         if(!priorityBlockingWaitingQueue.offer(task)) {
             throw new IllegalStateException("Problem with scheduling task " + task.getId() + " - " + task);
         }
@@ -86,17 +90,20 @@ public class DistributedTaskQueue {
         chainedTask.getDownstreamTasks().addAll(Arrays.asList(task.getDownstreamTaskIds()));
         chainedTasksMap.put(task.getId(), chainedTask);
         log.debug("[{}] scheduled chain for task Id = {}", dtqId, task.getId());
-        checkChainedTasks2(); //for case when all downstream jobs are done already
+        checkChainedTasksViaResults(); //for case when all downstream jobs are done already
         return listenOnTaskResult(task.getId());
     }
 
     //fixme (encapsulation?) this is called from workers after done task
-    public boolean checkChainedTasks2() {
+    public boolean checkChainedTasksViaResults() {
         RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(redisSharedChainTaskMap);
         log.trace("[{}] chainedTasks definitions = {}", dtqId, chainedTasksMap.keySet().size());
         for (Map.Entry<String, ChainedDistributedTask> entry : chainedTasksMap.entrySet()) {
             ChainedDistributedTask chainedTask = entry.getValue();
-            List<String> alreadyDoneTasks = chainedTask.getDownstreamTasks().stream().filter(t -> getResultsMap().containsKey(t)).collect(Collectors.toList());
+            List<String> alreadyDoneTasks = chainedTask.getDownstreamTasks().stream().filter(t -> {
+                Object o = getResultsMap().get(t);
+                return o != null && !(o instanceof Throwable);
+            }).collect(Collectors.toList());
             for (String taskId : alreadyDoneTasks) {
                 if(chainedTask.getDownstreamTasks().remove(taskId)) {
                     log.trace("[{}] removed task ({}) from {}", dtqId, taskId, chainedTask.getTask());
@@ -224,17 +231,18 @@ public class DistributedTaskQueue {
         return redisson.<IDistributedTask>getPriorityBlockingQueue(redisSharedWaitQueue);
     }
 
-    public IDistributedTask workerPoolLastTaskBlocking() {
-        IDistributedTask task = getPriorityBlockingWaitingQueue().pollLastAndOfferFirstTo(redisSharedWorkQueue);
-        log.debug("pooling last task {} to worker", task.getId());
-        if (task == null)
+    public IDistributedTask workerPoolLastTaskBlocking() throws InterruptedException {
+        IDistributedTask task = getPriorityBlockingWaitingQueue().takeLastAndOfferFirstTo(redisSharedWorkQueue);
+        if (task == null) {
             throw new IllegalStateException("after take task is null!");
+        }
+        log.debug("pooling last task {} to worker", task.getId());
         return task;
     }
 
-    public void workerSuccessfullyEnd(IDistributedTask task) {
-        log.debug("[{}] end working on task {}", dtqId, task.getId());
-        getWorkQueue().remove(task);
+    public void workerEndOnTask(IDistributedTask task) {
+        boolean remove = getWorkQueue().removeIf(t -> t.getId().equals(task.getId()));
+        log.debug("[{}] end working on task {} remove = {}", dtqId, task.getId(), remove);
     }
 
     public void workerPublishDone(String taskId) {
@@ -245,6 +253,10 @@ public class DistributedTaskQueue {
     public void workerStoreResults(String taskId, Object result) {
         log.trace("[{}] write result to redis resultMap <taskId, results>", dtqId);
         getResultsMap().put(taskId, result, 20, TimeUnit.MINUTES);
+    }
+
+    public void workerStoreError(String taskId, Exception e) {
+        getResultsMap().put(taskId, e, 20, TimeUnit.MINUTES);
     }
 
     /**
@@ -271,7 +283,7 @@ public class DistributedTaskQueue {
     /**
      * Compare two tasks, based on task priority
      */
-    public static class PriorityTaskIdComparator implements java.util.Comparator<IDistributedTask> {
+    public static class PriorityTaskComparator implements java.util.Comparator<IDistributedTask> {
         @Override
         public int compare(IDistributedTask o1, IDistributedTask o2) {
             int priority = o1.getPriority() - o2.getPriority();

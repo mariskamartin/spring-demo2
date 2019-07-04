@@ -44,6 +44,29 @@ public class DistributedTaskQueueTest {
     }
 
     @Test
+    public void testStopExecutionWhenErrorInChain() throws ExecutionException, InterruptedException, TimeoutException {
+        distributedTaskQueue.subscribeWorker();
+        IDistributedTask testDistributedTask1 = new TestDistributedTask(1);
+        IDistributedTask testDistributedTask2 = new TestFailTask();
+        // here it cares on order
+        Future<?> futureAggregatedResult = distributedTaskQueue.offerChain(new TestAggregatedDistributedTask(testDistributedTask1.getId(), testDistributedTask2.getId()));
+        distributedTaskQueue.offer(testDistributedTask1);
+        CompletableFuture<Object> offerFail = distributedTaskQueue.offer(testDistributedTask2);
+        try {
+            try {
+                Object o = offerFail.get();
+            } catch (ExecutionException e) {
+                assertTrue("should end with exception", true);
+            }
+            futureAggregatedResult.get(10, TimeUnit.SECONDS);
+        } catch (TimeoutException te) {
+            assertTrue("should not execute chain", true);
+        }
+
+    }
+
+
+    @Test
     public void testSimpleOfferAndProcessChainedTask() throws ExecutionException, InterruptedException, TimeoutException {
         distributedTaskQueue.subscribeWorker();
         TestDistributedTask testDistributedTask1 = new TestDistributedTask(1);

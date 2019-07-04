@@ -25,7 +25,6 @@ public class QueueWorker implements Runnable {
             try {
                 task = distributedTaskQueue.workerPoolLastTaskBlocking();
 
-                Object result = null;
                 try {
                     // client task part
                     if (task instanceof IChainedDistributedTask) {
@@ -36,15 +35,14 @@ public class QueueWorker implements Runnable {
                         }
                         decoratedTask.injectResults(results);
                     }
-                    result = task.call(distributedTaskQueue);
+                    distributedTaskQueue.workerStoreResults(task.getId(), task.call(distributedTaskQueue));
                     // end client task part
                 } catch (Exception e) { // when something went wrong store it for later execution
-                    result = e;
+                    distributedTaskQueue.workerStoreError(task.getId(), e);
                 }
-                distributedTaskQueue.workerStoreResults(task.getId(), result);
 //                distributedTaskQueue.checkChainedTasks(task.getId());
-                distributedTaskQueue.checkChainedTasks2();
-                distributedTaskQueue.workerSuccessfullyEnd(task);
+                distributedTaskQueue.checkChainedTasksViaResults();
+                distributedTaskQueue.workerEndOnTask(task);
             } catch (Exception e) {
                 log.warn(e.getMessage(), e);
             } finally {
