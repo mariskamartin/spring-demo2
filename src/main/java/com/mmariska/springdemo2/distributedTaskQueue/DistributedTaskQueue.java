@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 
 /**
@@ -19,8 +20,9 @@ import java.util.concurrent.*;
  *      done - runnable/callable decorator
  *      done - error handeling > maybe to future
  *      done - priority of tasks
+ *      done - results lifecycle (aggregation tasks? TTL?) > all task are stored for 20 minutes for now
+ *      - cancel task > implement as cancel topic in workers and listen
  *      - types handling > is needed ?
- *      - results lifecycle (aggregation tasks? TTL?) > null is not stored at all
  */
 public class DistributedTaskQueue {
     private static final Logger log = LoggerFactory.getLogger(SleepingDistributedTask.class);
@@ -84,10 +86,33 @@ public class DistributedTaskQueue {
         chainedTask.getDownstreamTasks().addAll(Arrays.asList(task.getDownstreamTaskIds()));
         chainedTasksMap.put(task.getId(), chainedTask);
         log.debug("[{}] scheduled chain for task Id = {}", dtqId, task.getId());
+        checkChainedTasks2(); //for case when all downstream jobs are done already
         return listenOnTaskResult(task.getId());
     }
 
     //fixme (encapsulation?) this is called from workers after done task
+    public boolean checkChainedTasks2() {
+        RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(redisSharedChainTaskMap);
+        log.trace("[{}] chainedTasks definitions = {}", dtqId, chainedTasksMap.keySet().size());
+        for (Map.Entry<String, ChainedDistributedTask> entry : chainedTasksMap.entrySet()) {
+            ChainedDistributedTask chainedTask = entry.getValue();
+            List<String> alreadyDoneTasks = chainedTask.getDownstreamTasks().stream().filter(t -> getResultsMap().containsKey(t)).collect(Collectors.toList());
+            for (String taskId : alreadyDoneTasks) {
+                if(chainedTask.getDownstreamTasks().remove(taskId)) {
+                    log.trace("[{}] removed task ({}) from {}", dtqId, taskId, chainedTask.getTask());
+                }
+            }
+
+            if (chainedTask.getDownstreamTasks().isEmpty()) {
+                offer(chainedTask.getTask());
+                chainedTasksMap.remove(entry.getKey()); // remove itself from map
+                return true;
+            }
+            chainedTasksMap.put(entry.getKey(), chainedTask); //update map
+        }
+        return false;
+    }
+
     public void checkChainedTasks(String doneTask) {
         RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(redisSharedChainTaskMap);
         log.trace("[{}] chainedTasks definitions = {}", dtqId, chainedTasksMap.keySet().size());
@@ -201,7 +226,7 @@ public class DistributedTaskQueue {
 
     public IDistributedTask workerPoolLastTaskBlocking() {
         IDistributedTask task = getPriorityBlockingWaitingQueue().pollLastAndOfferFirstTo(redisSharedWorkQueue);
-        log.debug("worker {} take task {}", this, task.getId());
+        log.debug("pooling last task {} to worker", task.getId());
         if (task == null)
             throw new IllegalStateException("after take task is null!");
         return task;
@@ -219,7 +244,7 @@ public class DistributedTaskQueue {
 
     public void workerStoreResults(String taskId, Object result) {
         log.trace("[{}] write result to redis resultMap <taskId, results>", dtqId);
-        getResultsMap().put(taskId, result);
+        getResultsMap().put(taskId, result, 20, TimeUnit.MINUTES);
     }
 
     /**
