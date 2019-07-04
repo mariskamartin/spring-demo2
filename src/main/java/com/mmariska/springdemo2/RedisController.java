@@ -117,7 +117,7 @@ public class RedisController {
 
     @RequestMapping(value="/q/done/{task}", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String doneTask(@PathVariable() String task) {
-        return "Task ["+task+"] is done = " + distributedTaskQueue.isTaskDone(task);
+        return "Task ["+task+"] is done = " + distributedTaskQueue.getFuture(task).isDone();
     }
 
     @RequestMapping(value="/q/subondelete", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})

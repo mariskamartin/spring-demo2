@@ -1,6 +1,5 @@
 package com.mmariska;
 
-import com.mmariska.springdemo2.distributedTaskQueue.PriorityTaskIdComparator;
 import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
@@ -9,6 +8,8 @@ import org.redisson.api.RPriorityBlockingQueue;
 import org.redisson.api.RedissonClient;
 import org.redisson.config.Config;
 import org.testcontainers.containers.GenericContainer;
+
+import java.util.Comparator;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -41,7 +42,12 @@ public class ReddisonIntegrationTest {
     @Test
     public void testSortingInPriorityQueue() {
         RPriorityBlockingQueue<String> priorityBlockingQueue = redisson.getPriorityBlockingQueue("test-priority-queue");
-        priorityBlockingQueue.trySetComparator(new PriorityTaskIdComparator());
+        priorityBlockingQueue.trySetComparator(new Comparator<String>() {
+            @Override
+            public int compare(String o1, String o2) {
+                return o2.compareTo(o1);
+            }
+        });
         priorityBlockingQueue.offer("Nclass");
         priorityBlockingQueue.offer("Gclass");
         priorityBlockingQueue.offer("Aclass");

@@ -86,12 +86,11 @@ public class DistributedTaskQueueTest {
     @Test
     public void testTaskIsDone() throws ExecutionException, InterruptedException, TimeoutException {
         TestDistributedTask task1 = new TestDistributedTask(1);
-        // todo should we test false before offering? :( it is strange
         Future<?> taskFuture = distributedTaskQueue.offer(task1);
-        assertFalse(distributedTaskQueue.isTaskDone(task1.getId()));
+        assertFalse(taskFuture.isDone());
         distributedTaskQueue.subscribeWorker();
         taskFuture.get(10, TimeUnit.SECONDS);
-        assertTrue(distributedTaskQueue.isTaskDone(task1.getId()));
+        assertTrue(taskFuture.isDone());
     }
 
     @Test
@@ -120,6 +119,25 @@ public class DistributedTaskQueueTest {
             assertEquals("Just fail", e.getCause().getMessage());
         }
     }
+
+    @Test
+    public void testExecutionInOrderOfTask() throws ExecutionException, InterruptedException, TimeoutException {
+        IDistributedTask task1 = new TestDistributedTask(1,"task1-");
+        Thread.sleep(2);
+        IDistributedTask task2 = new TestDistributedTask(1,"task2-");
+        Thread.sleep(2);
+        IDistributedTask task3 = new TestDistributedTask(1,"task3-");
+        distributedTaskQueue.offer(task1);
+        distributedTaskQueue.offer(task2);
+        distributedTaskQueue.offer(task3);
+        IDistributedTask iDistributedTask = distributedTaskQueue.workerPoolLastTaskBlocking();
+        assertEquals(task1.getId(), iDistributedTask.getId());
+        iDistributedTask = distributedTaskQueue.workerPoolLastTaskBlocking();
+        assertEquals(task2.getId(), iDistributedTask.getId());
+        iDistributedTask = distributedTaskQueue.workerPoolLastTaskBlocking();
+        assertEquals(task3.getId(), iDistributedTask.getId());
+    }
+
 
     @Test
     public void testPriorityOrderOfTask() throws ExecutionException, InterruptedException, TimeoutException {

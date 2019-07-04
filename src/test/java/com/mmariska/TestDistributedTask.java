@@ -8,7 +8,11 @@ public class TestDistributedTask extends AbstractDistributedTask {
     private long result;
 
     public TestDistributedTask(long result) {
-        super("test-dist-job-");
+        this(result,"test-dist-job-");
+    }
+
+    public TestDistributedTask(long result, String prefix) {
+        super(prefix);
         this.result = result;
     }
 

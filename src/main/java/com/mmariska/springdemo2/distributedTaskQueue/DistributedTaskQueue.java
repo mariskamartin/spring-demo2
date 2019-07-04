@@ -17,7 +17,8 @@ import java.util.concurrent.*;
  * Todo
  *      done - queue name handeling
  *      done - runnable/callable decorator
- *      in - error handeling > maybe to future
+ *      done - error handeling > maybe to future
+ *      done - priority of tasks
  *      - types handling > is needed ?
  *      - results lifecycle (aggregation tasks? TTL?) > null is not stored at all
  */
@@ -27,7 +28,6 @@ public class DistributedTaskQueue {
     private final String redisSharedWaitQueue; //waiting for workers
     private final String redisSharedWorkQueue; //workers already started work on these tasks
     private final String redisSharedChainTaskMap;
-    private final String redissonTaskMap; // scheduled task objects
     private final String redissonResultsMap;
     private final String redissonDoneTopic;
     private final String dtqId;
@@ -57,7 +57,6 @@ public class DistributedTaskQueue {
         redisSharedWaitQueue = dtqId + "WaitQueue";
         redisSharedWorkQueue = dtqId + "WorkQueue";
         redisSharedChainTaskMap = dtqId + "ChainedTasks";
-        redissonTaskMap = dtqId + "TaskObjectsMap";
         redissonResultsMap = dtqId + "Results";
         redissonDoneTopic = dtqId + "DoneTopic";
     }
@@ -70,12 +69,11 @@ public class DistributedTaskQueue {
 
 
     public CompletableFuture<Object> offer(IDistributedTask task) {
-        RPriorityBlockingQueue<String> priorityBlockingWaitingQueue = getPriorityBlockingWaitingQueue();
+        RPriorityBlockingQueue<IDistributedTask> priorityBlockingWaitingQueue = getPriorityBlockingWaitingQueue();
         if (priorityBlockingWaitingQueue.isEmpty()) priorityBlockingWaitingQueue.trySetComparator(new PriorityTaskIdComparator());
-        if(!priorityBlockingWaitingQueue.offer(task.getId()) ) {
+        if(!priorityBlockingWaitingQueue.offer(task)) {
             throw new IllegalStateException("Problem with scheduling task " + task.getId() + " - " + task);
         }
-        getTaskObjectMap().put(task.getId(), task); //store object for later execution
         log.debug("[{}] scheduled task Id = {}", dtqId, task.getId());
         return listenOnTaskResult(task.getId());
     }
@@ -87,20 +85,6 @@ public class DistributedTaskQueue {
         chainedTasksMap.put(task.getId(), chainedTask);
         log.debug("[{}] scheduled chain for task Id = {}", dtqId, task.getId());
         return listenOnTaskResult(task.getId());
-    }
-
-    public boolean isTaskDone(String taskId) {
-        RBatch batch = redisson.createBatch();
-        batch.getQueue(redisSharedWaitQueue).containsAsync(taskId);
-        batch.getQueue(redisSharedWorkQueue).containsAsync(taskId);
-        batch.getMap(redisSharedChainTaskMap).containsKeyAsync(taskId);
-        BatchResult<?> execute = batch.execute();
-        for (Object resp : execute.getResponses()) {
-            if ((boolean) resp) {
-                return false; //still running somewhere
-            }
-        }
-        return true; //task done
     }
 
     //fixme (encapsulation?) this is called from workers after done task
@@ -202,38 +186,30 @@ public class DistributedTaskQueue {
         return redisson.<String, Object>getMapCache(redissonResultsMap);
     }
 
-    private RQueue<String> getWorkQueue() {
-        return redisson.<String>getQueue(redisSharedWorkQueue);
+    private RQueue<IDistributedTask> getWorkQueue() {
+        return redisson.<IDistributedTask>getQueue(redisSharedWorkQueue);
     }
 
-    private RMap<String, IDistributedTask> getTaskObjectMap() {
-        return redisson.<String, IDistributedTask>getMap(redissonTaskMap);
-    }
-
-    private RPriorityBlockingQueue<String> getPriorityBlockingWaitingQueue() {
+    private RPriorityBlockingQueue<IDistributedTask> getPriorityBlockingWaitingQueue() {
         //alphabeticalOrder Z (low), A (high)
         //HIGH_taskID
         //NORMAL_taskID
         //OTHERS_taskID
         // [otherTasksIds, normalTaskId, highTaskIds], we pool Last item
-        return redisson.<String>getPriorityBlockingQueue(redisSharedWaitQueue);
+        return redisson.<IDistributedTask>getPriorityBlockingQueue(redisSharedWaitQueue);
     }
 
-    public IDistributedTask workerPoolLastTaskBlocking() throws InterruptedException {
-        String taskId = getPriorityBlockingWaitingQueue().pollLastAndOfferFirstTo(redisSharedWorkQueue);
-        log.debug("worker {} take task {}", this, taskId);
-        if (taskId == null)
-            throw new IllegalStateException("after take is taskId null!");
-        IDistributedTask task = getTaskObjectMap().get(taskId);
+    public IDistributedTask workerPoolLastTaskBlocking() {
+        IDistributedTask task = getPriorityBlockingWaitingQueue().pollLastAndOfferFirstTo(redisSharedWorkQueue);
+        log.debug("worker {} take task {}", this, task.getId());
         if (task == null)
-            throw new IllegalStateException("after take task is null! for taskId = " + taskId);
+            throw new IllegalStateException("after take task is null!");
         return task;
     }
 
-    public void workerSuccessfullyEnd(String taskId) {
-        log.debug("[{}] end working on task {}", dtqId, taskId);
-        getWorkQueue().remove(taskId);
-        getTaskObjectMap().remove(taskId);
+    public void workerSuccessfullyEnd(IDistributedTask task) {
+        log.debug("[{}] end working on task {}", dtqId, task.getId());
+        getWorkQueue().remove(task);
     }
 
     public void workerPublishDone(String taskId) {
@@ -264,6 +240,17 @@ public class DistributedTaskQueue {
 
         public IDistributedTask getTask() {
             return task;
+        }
+    }
+
+    /**
+     * Compare two tasks, based on task priority
+     */
+    public static class PriorityTaskIdComparator implements java.util.Comparator<IDistributedTask> {
+        @Override
+        public int compare(IDistributedTask o1, IDistributedTask o2) {
+            int priority = o1.getPriority() - o2.getPriority();
+            return priority == 0 ? Math.toIntExact(o2.getCreatedTime() - o1.getCreatedTime()) : priority;
         }
     }
 }

@@ -25,6 +25,11 @@ public abstract class AbstractDistributedTask implements IDistributedTask {
     }
 
     @Override
+    public byte getPriority() {
+        return 0;
+    }
+
+    @Override
     public long getCreatedTime() {
         return createTime;
     }

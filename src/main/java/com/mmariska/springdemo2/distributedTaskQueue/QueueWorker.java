@@ -43,7 +43,7 @@ public class QueueWorker implements Runnable {
                 }
                 distributedTaskQueue.workerStoreResults(task.getId(), result);
                 distributedTaskQueue.checkChainedTasks(task.getId());
-                distributedTaskQueue.workerSuccessfullyEnd(task.getId());
+                distributedTaskQueue.workerSuccessfullyEnd(task);
             } catch (Exception e) {
                 log.warn(e.getMessage(), e);
             } finally {

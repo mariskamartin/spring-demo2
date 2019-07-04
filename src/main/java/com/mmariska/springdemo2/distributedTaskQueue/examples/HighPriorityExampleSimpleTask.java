@@ -10,7 +10,12 @@ public class HighPriorityExampleSimpleTask extends AbstractDistributedTask {
     private static final Logger log = LoggerFactory.getLogger(LoggingTraceRepository.class);
 
     public HighPriorityExampleSimpleTask() {
-        super("A-exampleTask-");
+        super("High-Task-");
+    }
+
+    @Override
+    public byte getPriority() {
+        return 100;
     }
 
     @Override
