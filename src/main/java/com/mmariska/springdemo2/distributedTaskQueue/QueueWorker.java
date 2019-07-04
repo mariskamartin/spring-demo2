@@ -23,7 +23,7 @@ public class QueueWorker implements Runnable {
         while(isRunning.get()) {
             IDistributedTask task = null;
             try {
-                task = distributedTaskQueue.workerTakeTaskBlocking();
+                task = distributedTaskQueue.workerPoolLastTaskBlocking();
 
                 Object result = null;
                 try {

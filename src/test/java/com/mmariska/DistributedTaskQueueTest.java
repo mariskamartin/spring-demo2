@@ -1,7 +1,9 @@
 package com.mmariska;
 
 import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
+import com.mmariska.springdemo2.distributedTaskQueue.IDistributedTask;
 import com.mmariska.springdemo2.distributedTaskQueue.examples.ExampleSimpleTask;
+import com.mmariska.springdemo2.distributedTaskQueue.examples.HighPriorityExampleSimpleTask;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -119,4 +121,21 @@ public class DistributedTaskQueueTest {
         }
     }
 
+    @Test
+    public void testPriorityOrderOfTask() throws ExecutionException, InterruptedException, TimeoutException {
+        IDistributedTask task1 = new ExampleSimpleTask();
+        IDistributedTask task2 = new HighPriorityExampleSimpleTask();
+        IDistributedTask task3 = new ExampleSimpleTask();
+        IDistributedTask task4 = new HighPriorityExampleSimpleTask();
+        IDistributedTask task5 = new ExampleSimpleTask();
+        distributedTaskQueue.offer(task1);
+        distributedTaskQueue.offer(task2);
+        distributedTaskQueue.offer(task3);
+        distributedTaskQueue.offer(task4);
+        distributedTaskQueue.offer(task5);
+        IDistributedTask iDistributedTask = distributedTaskQueue.workerPoolLastTaskBlocking();
+        assertEquals(task4.getId(), iDistributedTask.getId());
+        iDistributedTask = distributedTaskQueue.workerPoolLastTaskBlocking();
+        assertEquals(task2.getId(), iDistributedTask.getId());
+    }
 }

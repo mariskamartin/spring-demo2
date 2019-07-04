@@ -68,17 +68,11 @@ public class DistributedTaskQueue {
         return true; //for now there is no more logic around
     }
 
-    private RMap<String, IDistributedTask> getTaskObjectMap() {
-        return redisson.<String, IDistributedTask>getMap(redissonTaskMap);
-    }
-
-    private RPriorityBlockingQueue<String> getPriorityBlockingWaitingQueue() {
-        return redisson.<String>getPriorityBlockingQueue(redisSharedWaitQueue);
-    }
-
 
     public CompletableFuture<Object> offer(IDistributedTask task) {
-        if(!getPriorityBlockingWaitingQueue().offer(task.getId()) ) {
+        RPriorityBlockingQueue<String> priorityBlockingWaitingQueue = getPriorityBlockingWaitingQueue();
+        if (priorityBlockingWaitingQueue.isEmpty()) priorityBlockingWaitingQueue.trySetComparator(new PriorityTaskIdComparator());
+        if(!priorityBlockingWaitingQueue.offer(task.getId()) ) {
             throw new IllegalStateException("Problem with scheduling task " + task.getId() + " - " + task);
         }
         getTaskObjectMap().put(task.getId(), task); //store object for later execution
@@ -205,12 +199,28 @@ public class DistributedTaskQueue {
     }
 
     private RMapCache<String, Object> getResultsMap() {
-        return redisson.getMapCache(redissonResultsMap);
+        return redisson.<String, Object>getMapCache(redissonResultsMap);
     }
 
+    private RQueue<String> getWorkQueue() {
+        return redisson.<String>getQueue(redisSharedWorkQueue);
+    }
 
-    public IDistributedTask workerTakeTaskBlocking() throws InterruptedException {
-        String taskId = getPriorityBlockingWaitingQueue().takeLastAndOfferFirstTo(redisSharedWorkQueue);
+    private RMap<String, IDistributedTask> getTaskObjectMap() {
+        return redisson.<String, IDistributedTask>getMap(redissonTaskMap);
+    }
+
+    private RPriorityBlockingQueue<String> getPriorityBlockingWaitingQueue() {
+        //alphabeticalOrder Z (low), A (high)
+        //HIGH_taskID
+        //NORMAL_taskID
+        //OTHERS_taskID
+        // [otherTasksIds, normalTaskId, highTaskIds], we pool Last item
+        return redisson.<String>getPriorityBlockingQueue(redisSharedWaitQueue);
+    }
+
+    public IDistributedTask workerPoolLastTaskBlocking() throws InterruptedException {
+        String taskId = getPriorityBlockingWaitingQueue().pollLastAndOfferFirstTo(redisSharedWorkQueue);
         log.debug("worker {} take task {}", this, taskId);
         if (taskId == null)
             throw new IllegalStateException("after take is taskId null!");
@@ -222,7 +232,7 @@ public class DistributedTaskQueue {
 
     public void workerSuccessfullyEnd(String taskId) {
         log.debug("[{}] end working on task {}", dtqId, taskId);
-        redisson.getQueue(redisSharedWorkQueue).remove(taskId);
+        getWorkQueue().remove(taskId);
         getTaskObjectMap().remove(taskId);
     }
 
