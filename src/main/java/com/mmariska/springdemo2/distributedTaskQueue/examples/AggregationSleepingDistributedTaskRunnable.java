@@ -1,8 +1,7 @@
 package com.mmariska.springdemo2.distributedTaskQueue.examples;
 
 import com.mmariska.springdemo2.distributedTaskQueue.AbstractChainedDistributedTask;
-import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
-import com.mmariska.springdemo2.distributedTaskQueue.IChainedDistributedTask;
+import com.mmariska.springdemo2.distributedTaskQueue.IDistributedTaskQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,7 +21,7 @@ public class AggregationSleepingDistributedTaskRunnable extends AbstractChainedD
     }
 
     @Override
-    public Object call(DistributedTaskQueue distributedTaskQueue, Map<String, Object> results) {
+    public Object call(IDistributedTaskQueue distributedTaskQueue, Map<String, Object> results) {
         long sum = results.values().stream().mapToLong(result -> (long) result).sum();
         log.debug("aggregated result ({}) = {}", getDownstreamTaskIds(), sum);
         sleepingDistributedTask.call(distributedTaskQueue);

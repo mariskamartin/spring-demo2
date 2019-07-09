@@ -7,7 +7,6 @@ import com.mmariska.springdemo2.distributedTaskQueue.examples.HighPriorityExampl
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.redisson.api.listener.MessageListener;
 import org.testcontainers.containers.GenericContainer;
 
 import java.util.Arrays;
@@ -35,21 +34,21 @@ public class DistributedTaskQueueTest {
 
     @Test
     public void testOfferAndProcessTask() throws ExecutionException, InterruptedException, TimeoutException {
-        distributedTaskQueue.subscribeWorker();
+        distributedTaskQueue.startLocalWorker();
         Future<?> futureResult = distributedTaskQueue.offer(new TestDistributedTask(2));
         assertEquals("result correctly processed", 2L, futureResult.get(10, TimeUnit.SECONDS));
     }
 
     @Test
     public void testSimpleClassOfferAndProcessTask() throws ExecutionException, InterruptedException, TimeoutException {
-        distributedTaskQueue.subscribeWorker();
+        distributedTaskQueue.startLocalWorker();
         Future<?> futureResult = distributedTaskQueue.offer(new ExampleSimpleTask());
         assertEquals("result correctly processed", 0L, futureResult.get());
     }
 
     @Test
     public void testStopExecutionWhenErrorInChain() throws ExecutionException, InterruptedException, TimeoutException {
-        distributedTaskQueue.subscribeWorker();
+        distributedTaskQueue.startLocalWorker();
         IDistributedTask testDistributedTask1 = new TestDistributedTask(1);
         IDistributedTask testDistributedTask2 = new TestFailTask();
         // here it cares on order
@@ -72,7 +71,7 @@ public class DistributedTaskQueueTest {
 
     @Test
     public void testSimpleOfferAndProcessChainedTask() throws ExecutionException, InterruptedException, TimeoutException {
-        distributedTaskQueue.subscribeWorker();
+        distributedTaskQueue.startLocalWorker();
         TestDistributedTask testDistributedTask1 = new TestDistributedTask(1);
         TestDistributedTask testDistributedTask2 = new TestDistributedTask(2);
         // here it cares on order
@@ -83,8 +82,8 @@ public class DistributedTaskQueueTest {
     }
 
     @Test
-    public void testOfferAndProcessChainedTaskOfferedEarlier() throws ExecutionException, InterruptedException, TimeoutException {
-        distributedTaskQueue.subscribeWorker();
+    public void testOfferAndProcessChainedTaskForDownstreamTasksOfferedEarlier() throws ExecutionException, InterruptedException, TimeoutException {
+        distributedTaskQueue.startLocalWorker();
         TestDistributedTask testDistributedTask1 = new TestDistributedTask(1);
         TestDistributedTask testDistributedTask2 = new TestDistributedTask(2);
         // here, worker process first task earlier than we register chain
@@ -96,7 +95,7 @@ public class DistributedTaskQueueTest {
 
     @Test
     public void testGetFutureForTaskAgain() throws ExecutionException, InterruptedException, TimeoutException {
-        distributedTaskQueue.subscribeWorker();
+        distributedTaskQueue.startLocalWorker();
         TestDistributedTask testDistributedTask1 = new TestDistributedTask(5);
         TestDistributedTask testDistributedTask2 = new TestDistributedTask(2);
         TestAggregatedDistributedTask aggTask = new TestAggregatedDistributedTask(testDistributedTask1.getId(), testDistributedTask2.getId());
@@ -111,44 +110,59 @@ public class DistributedTaskQueueTest {
     }
 
     @Test
+    public void testGetFutureForNonExistentTask() {
+        try {
+            Future<Object> taskFuture = distributedTaskQueue.getFuture("notCurrentlyExists");
+            fail("should not to run");
+        } catch (IllegalStateException e) {
+            assertTrue("should fail", true);
+        }
+    }
+
+    @Test
     public void testTaskIsDone() throws ExecutionException, InterruptedException, TimeoutException {
         TestDistributedTask task1 = new TestDistributedTask(1);
         Future<?> taskFuture = distributedTaskQueue.offer(task1);
         assertFalse(taskFuture.isDone());
-        distributedTaskQueue.subscribeWorker();
+        distributedTaskQueue.startLocalWorker();
         taskFuture.get(10, TimeUnit.SECONDS);
         assertTrue(taskFuture.isDone());
     }
 
     @Test
-    public void testCoexistenceOfDistributedQueues() throws ExecutionException, InterruptedException, TimeoutException {
+    public void testCoexistenceOfDistributedQueues() throws InterruptedException {
         DistributedTaskQueue dtq1 = new DistributedTaskQueue("redis://" + redis.getContainerIpAddress() + ":" + redis.getFirstMappedPort(), "q1");
         DistributedTaskQueue dtq2 = new DistributedTaskQueue("redis://" + redis.getContainerIpAddress() + ":" + redis.getFirstMappedPort(), "q2");
-        dtq1.offer(new TestDistributedTask(1));
-        Future<?> offer = dtq1.offer(new TestDistributedTask(2));
-        Future<?> offer2 = dtq2.offer(new TestDistributedTask(3));
-        dtq1.subscribeWorker();
-        assertEquals(2L, offer.get(10, TimeUnit.SECONDS));
-        try {
-            offer2.get(5, TimeUnit.SECONDS); // fixme this is slow test, make this somehow different
-        } catch (TimeoutException e) {
-            assertTrue(true);
-        }
+        TestDistributedTask task1 = new TestDistributedTask(1);
+        TestDistributedTask task2 = new TestDistributedTask(2);
+        dtq1.offer(task1);
+        dtq2.offer(task2);
+
+        IDistributedTask iDistributedTask = dtq1.workerPoolLastTask();
+        assertEquals(task1.getId(), iDistributedTask.getId());
+        iDistributedTask = dtq1.workerPoolLastTask();
+        assertNull(iDistributedTask);
+
+        iDistributedTask = dtq2.workerPoolLastTask();
+        assertEquals(task2.getId(), iDistributedTask.getId());
+        iDistributedTask = dtq2.workerPoolLastTask();
+        assertNull(iDistributedTask);
     }
 
     @Test
-    public void testFailTask() throws ExecutionException, InterruptedException, TimeoutException {
-        distributedTaskQueue.subscribeWorker();
+    public void testFailTask() throws InterruptedException, TimeoutException {
+        distributedTaskQueue.startLocalWorker();
         CompletableFuture<?> taskFuture = distributedTaskQueue.offer(new TestFailTask());
         try {
             taskFuture.get(10, TimeUnit.SECONDS);
+            fail("this should not be executed. exception expected");
         } catch (ExecutionException e) {
             assertEquals("Just fail", e.getCause().getMessage());
         }
     }
 
     @Test
-    public void testExecutionInOrderOfTask() throws ExecutionException, InterruptedException, TimeoutException {
+    public void testInOrderExecutionOfScheduledTask() throws InterruptedException {
         IDistributedTask task1 = new TestDistributedTask(1,"task1-");
         Thread.sleep(2);
         IDistributedTask task2 = new TestDistributedTask(1,"task2-");
@@ -168,28 +182,22 @@ public class DistributedTaskQueueTest {
     @Test
     public void testExecutionInOrderOfTaskWithChain() throws ExecutionException, InterruptedException, TimeoutException {
         IDistributedTask task1 = new TestDistributedTask(1,"task1-");
-        TestAggregatedDistributedTask taskAgg = new TestAggregatedDistributedTask(task1.getId());
+        TestAggregatedDistributedTask taskAggCreatedAfterTask1 = new TestAggregatedDistributedTask(task1.getId());
         Thread.sleep(2);
         IDistributedTask task2 = new TestDistributedTask(1,"task2-");
         Thread.sleep(2);
         IDistributedTask task3 = new TestDistributedTask(1,"task3-");
-        CompletableFuture<Object> completableFuture = distributedTaskQueue.offerChain(taskAgg);
+        CompletableFuture<Object> futureAggTask = distributedTaskQueue.offerChain(taskAggCreatedAfterTask1);
         distributedTaskQueue.offer(task1);
         distributedTaskQueue.offer(task2);
-        CompletableFuture<Object> offer3 = distributedTaskQueue.offer(task3);
+        CompletableFuture<Object> futureTask3 = distributedTaskQueue.offer(task3);
 
         List<String> doneTasks = new LinkedList<>();
-        distributedTaskQueue.subscribeListenerOnDoneTask(new MessageListener<String>() {
-            @Override
-            public void onMessage(CharSequence channel, String msg) {
-                doneTasks.add(msg);
-            }
-        });
-
-        distributedTaskQueue.subscribeWorker();
-        assertEquals(1L, completableFuture.get()) ;
-        assertEquals(1L, offer3.get()) ;
-        assertEquals(Arrays.asList(task1.getId(), taskAgg.getId(), task2.getId(), task3.getId()), doneTasks) ;
+        distributedTaskQueue.subscribeListenerOnDoneTask((channel, doneTaskId) -> doneTasks.add(doneTaskId));
+        distributedTaskQueue.startLocalWorker();
+        assertEquals(1L, futureTask3.get()) ;
+        assertEquals(1L, futureAggTask.get()) ;
+        assertEquals(Arrays.asList(task1.getId(), taskAggCreatedAfterTask1.getId(), task2.getId(), task3.getId()), doneTasks) ;
     }
 
 

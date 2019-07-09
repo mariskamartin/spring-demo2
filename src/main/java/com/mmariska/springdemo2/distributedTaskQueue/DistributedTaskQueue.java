@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
  *      - cancel task > implement as cancel topic in workers and listen
  *      - types handling > is needed ?
  */
-public class DistributedTaskQueue {
+public class DistributedTaskQueue implements IDistributedTaskQueue {
     private static final Logger log = LoggerFactory.getLogger(DistributedTaskQueue.class);
 
     private final String redisSharedWaitQueue; //waiting for workers
@@ -66,13 +66,15 @@ public class DistributedTaskQueue {
         if (getPriorityBlockingWaitingQueue().isEmpty()) getPriorityBlockingWaitingQueue().trySetComparator(new PriorityTaskComparator());
     }
 
-    public boolean subscribeWorker() {
+    @Override
+    public boolean startLocalWorker() {
         ExecutorService executor = Executors.newFixedThreadPool(1);
         executor.submit(new QueueWorker(this));
         return true; //for now there is no more logic around
     }
 
 
+    @Override
     public CompletableFuture<Object> offer(IDistributedTask task) {
         RPriorityBlockingQueue<IDistributedTask> priorityBlockingWaitingQueue = getPriorityBlockingWaitingQueue();
         // when queue is empty redis will destroy it also with comparator
@@ -84,8 +86,9 @@ public class DistributedTaskQueue {
         return listenOnTaskResult(task.getId());
     }
 
+    @Override
     public CompletableFuture<Object> offerChain(IChainedDistributedTask task) {
-        RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(redisSharedChainTaskMap);
+        RMap<String, ChainedDistributedTask> chainedTasksMap = getChainedTasksMap();
         ChainedDistributedTask chainedTask = new ChainedDistributedTask(task);
         chainedTask.getDownstreamTasks().addAll(Arrays.asList(task.getDownstreamTaskIds()));
         chainedTasksMap.put(task.getId(), chainedTask);
@@ -95,8 +98,9 @@ public class DistributedTaskQueue {
     }
 
     //fixme (encapsulation?) this is called from workers after done task
+    @Override
     public boolean checkChainedTasksViaResults() {
-        RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(redisSharedChainTaskMap);
+        RMap<String, ChainedDistributedTask> chainedTasksMap = getChainedTasksMap();
         log.trace("[{}] chainedTasks definitions = {}", dtqId, chainedTasksMap.keySet().size());
         for (Map.Entry<String, ChainedDistributedTask> entry : chainedTasksMap.entrySet()) {
             ChainedDistributedTask chainedTask = entry.getValue();
@@ -120,21 +124,21 @@ public class DistributedTaskQueue {
         return false;
     }
 
-    public void checkChainedTasks(String doneTask) {
-        RMap<String, ChainedDistributedTask> chainedTasksMap = redisson.getMap(redisSharedChainTaskMap);
-        log.trace("[{}] chainedTasks definitions = {}", dtqId, chainedTasksMap.keySet().size());
-        for (Map.Entry<String, ChainedDistributedTask> entry : chainedTasksMap.entrySet()) {
-            ChainedDistributedTask chainedTask = entry.getValue();
-            if(chainedTask.getDownstreamTasks().remove(doneTask)) {
-                chainedTasksMap.put(entry.getKey(), chainedTask); //update map
-                log.trace("[{}] removed task ({}) from {}", dtqId, doneTask, chainedTask.getTask());
-                if (chainedTask.getDownstreamTasks().isEmpty()) {
-                    offer(chainedTask.getTask());
-                    chainedTasksMap.remove(entry.getKey()); // remove itself from map
-                }
-            }
-        }
-    }
+//    public void checkChainedTasks(String doneTask) {
+//        RMap<String, ChainedDistributedTask> chainedTasksMap = getChainedTasksMap();
+//        log.trace("[{}] chainedTasks definitions = {}", dtqId, chainedTasksMap.keySet().size());
+//        for (Map.Entry<String, ChainedDistributedTask> entry : chainedTasksMap.entrySet()) {
+//            ChainedDistributedTask chainedTask = entry.getValue();
+//            if(chainedTask.getDownstreamTasks().remove(doneTask)) {
+//                chainedTasksMap.put(entry.getKey(), chainedTask); //update map
+//                log.trace("[{}] removed task ({}) from {}", dtqId, doneTask, chainedTask.getTask());
+//                if (chainedTask.getDownstreamTasks().isEmpty()) {
+//                    offer(chainedTask.getTask());
+//                    chainedTasksMap.remove(entry.getKey()); // remove itself from map
+//                }
+//            }
+//        }
+//    }
 
     public boolean recheckFailures() {
         // todo needs to reschedule failed tasks pending in queues
@@ -165,6 +169,12 @@ public class DistributedTaskQueue {
         return Redisson.create(config);
     }
 
+    /**
+     * return result if exists
+     * @param taskId task id
+     * @return result stored for task, otherwise null
+     */
+    @Override
     public Object getResult(String taskId) {
         return getResultsMap().get(taskId);
     }
@@ -174,18 +184,21 @@ public class DistributedTaskQueue {
      * @param taskId
      * @return Future
      */
-    public CompletableFuture<Object> getFuture(String taskId) {
+    @Override
+    public CompletableFuture<Object> getFuture(final String taskId) {
         //check result map -> we already have result
-        //todo check for stucked job
-        //return future with listener.. we still waiting
         if (getResultsMap().containsKey(taskId)) {
             CompletableFuture<Object> completedFuture = new CompletableFuture<>();
             completedFuture.complete(getResultsMap().get(taskId));
             return completedFuture;
-        } else {
-            CompletableFuture<Object> future = listenOnTaskResult(taskId);
-            return future;
         }
+        //return future with listener in case we have id in queue.. we still waiting
+        if (getPriorityBlockingWaitingQueue().stream().filter(t -> t.getId().equals(taskId)).count() == 0
+                && getWorkQueue().stream().filter(t -> t.getId().equals(taskId)).count() == 0
+                && !getChainedTasksMap().containsKey(taskId)) {
+            throw new IllegalStateException("Task " + taskId + " do not exists in queue.");
+        }
+        return listenOnTaskResult(taskId);
     }
 
     private CompletableFuture<Object> listenOnTaskResult(String taskId) {
@@ -226,14 +239,27 @@ public class DistributedTaskQueue {
     }
 
     private RPriorityBlockingQueue<IDistributedTask> getPriorityBlockingWaitingQueue() {
-        //alphabeticalOrder Z (low), A (high)
-        //HIGH_taskID
-        //NORMAL_taskID
-        //OTHERS_taskID
         // [otherTasksIds, normalTaskId, highTaskIds], we pool Last item
         return redisson.<IDistributedTask>getPriorityBlockingQueue(redisSharedWaitQueue);
     }
 
+    private RMap<String, ChainedDistributedTask> getChainedTasksMap() {
+        return redisson.getMap(redisSharedChainTaskMap);
+    }
+
+    /**
+     *
+     * @return return null, when queue is empty. Otherwice return task for work
+     * @throws InterruptedException
+     */
+    @Override
+    public IDistributedTask workerPoolLastTask() throws InterruptedException {
+        IDistributedTask task = getPriorityBlockingWaitingQueue().pollLastAndOfferFirstTo(redisSharedWorkQueue);
+        log.debug("pooling last task {} to worker", task == null ? "null" : task.getId());
+        return task;
+    }
+
+    @Override
     public IDistributedTask workerPoolLastTaskBlocking() throws InterruptedException {
         IDistributedTask task = getPriorityBlockingWaitingQueue().takeLastAndOfferFirstTo(redisSharedWorkQueue);
         if (task == null) {
@@ -243,21 +269,25 @@ public class DistributedTaskQueue {
         return task;
     }
 
+    @Override
     public void workerEndOnTask(IDistributedTask task) {
         boolean remove = getWorkQueue().removeIf(t -> t.getId().equals(task.getId()));
         log.debug("[{}] end working on task {} remove = {}", dtqId, task.getId(), remove);
     }
 
-    public void workerPublishDone(String taskId) {
+    @Override
+    public void workerFinallyDoneAndCleanup(String taskId) {
         log.debug("[{}] publish done for task {}", dtqId, taskId);
         redisson.getTopic(redissonDoneTopic).publish(taskId);
     }
 
+    @Override
     public void workerStoreResults(String taskId, Object result) {
         log.trace("[{}] write result to redis resultMap <taskId, results>", dtqId);
         getResultsMap().put(taskId, result, 20, TimeUnit.MINUTES);
     }
 
+    @Override
     public void workerStoreError(String taskId, Exception e) {
         getResultsMap().put(taskId, e, 20, TimeUnit.MINUTES);
     }

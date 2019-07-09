@@ -2,7 +2,7 @@ package com.mmariska.springdemo2.distributedTaskQueue.examples;
 
 import com.mmariska.springdemo2.LoggingTraceRepository;
 import com.mmariska.springdemo2.distributedTaskQueue.AbstractDistributedTask;
-import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
+import com.mmariska.springdemo2.distributedTaskQueue.IDistributedTaskQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,7 +14,7 @@ public class ExampleSimpleTask extends AbstractDistributedTask {
     }
 
     @Override
-    public Object call(DistributedTaskQueue distributedTaskQueue) {
+    public Object call(IDistributedTaskQueue distributedTaskQueue) {
         log.info("test task called and done");
         return 0L;
     }

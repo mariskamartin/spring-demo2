@@ -1,7 +1,7 @@
 package com.mmariska.springdemo2.distributedTaskQueue.examples;
 
 import com.mmariska.springdemo2.distributedTaskQueue.AbstractDistributedTask;
-import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
+import com.mmariska.springdemo2.distributedTaskQueue.IDistributedTaskQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,7 +19,7 @@ public class SleepingDistributedTask extends AbstractDistributedTask {
     }
 
     @Override
-    public Object call(DistributedTaskQueue distributedTaskQueue) {
+    public Object call(IDistributedTaskQueue distributedTaskQueue) {
         long result = getResult();
         log.debug("going to sleep/work for {}[ms]", getSleepInMs());
         sleep(getSleepInMs());

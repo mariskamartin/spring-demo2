@@ -5,10 +5,12 @@ import org.junit.ClassRule;
 import org.junit.Test;
 import org.redisson.Redisson;
 import org.redisson.api.RPriorityBlockingQueue;
+import org.redisson.api.RQueue;
 import org.redisson.api.RedissonClient;
 import org.redisson.config.Config;
 import org.testcontainers.containers.GenericContainer;
 
+import java.io.Serializable;
 import java.util.Comparator;
 
 import static org.junit.Assert.assertEquals;
@@ -64,6 +66,55 @@ public class ReddisonIntegrationTest {
         assertEquals("Xclass", priorityBlockingQueue.pollLastAndOfferFirstTo("some"));
         assertTrue(priorityBlockingQueue.isEmpty());
 
+    }
+
+    public static interface ITask {
+        String getId();
+    }
+
+    public static class TaskTestObject implements Serializable, ITask {
+        String id;
+        String name;
+
+        public TaskTestObject(String id, String name) {
+            this.id = id;
+            this.name = name;
+        }
+
+        @Override
+        public String getId() {
+            return id;
+        }
+    }
+
+    public static class ExTaskTest extends TaskTestObject {
+        long l = 2L;
+
+        public ExTaskTest(String id, String name) {
+            super(id, name);
+        }
+    }
+
+    @Test
+    public void testContainsObjectInObjectQueue() {
+        RQueue<ITask> queue = redisson.<ITask>getQueue("queue1");
+        queue.offer(new TaskTestObject("1", "some1"));
+        TaskTestObject some2 = new TaskTestObject("2", "some2");
+        TaskTestObject some2newReference = new TaskTestObject("2", "some2");
+        queue.offer(some2);
+        assertTrue(queue.contains(some2));
+        assertTrue(queue.contains(some2newReference));
+    }
+
+    @Test
+    public void testContainsTaskIdInObjectQueue() {
+        RQueue<ITask> queue = redisson.<ITask>getQueue("queue2");
+        queue.offer(new TaskTestObject("1", "some1"));
+        queue.offer(new TaskTestObject("2", "some2"));
+        queue.offer(new TaskTestObject("3", "some3"));
+        final String id = "2";
+        assertTrue(queue.stream().filter(t -> t.getId().equals(id)).count() > 0);
+        assertTrue(queue.parallelStream().filter(t -> t.getId().equals(id)).count() > 0);
     }
 
 }

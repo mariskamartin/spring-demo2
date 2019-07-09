@@ -179,7 +179,7 @@ public class RedisController {
 
     @RequestMapping(value="/worker", method = RequestMethod.GET, produces = {MediaType.TEXT_HTML_VALUE})
     private String worker() {
-        distributedTaskQueue.subscribeWorker();
+        distributedTaskQueue.startLocalWorker();
         return "("+ System.getenv("MY_POD_NAME") + ") distributed worker registered";
     }
 

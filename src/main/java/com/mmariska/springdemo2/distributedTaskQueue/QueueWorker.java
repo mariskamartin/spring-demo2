@@ -10,10 +10,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class QueueWorker implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(QueueWorker.class);
 
-    private final DistributedTaskQueue distributedTaskQueue;
+    private final IDistributedTaskQueue distributedTaskQueue;
     private AtomicBoolean isRunning = new AtomicBoolean(true);
 
-    public QueueWorker(DistributedTaskQueue distributedTaskQueue){
+    public QueueWorker(IDistributedTaskQueue distributedTaskQueue){
         log.info("created new worker {} - {}", this, Thread.currentThread().getName());
         this.distributedTaskQueue = distributedTaskQueue;
     }
@@ -40,13 +40,12 @@ public class QueueWorker implements Runnable {
                 } catch (Exception e) { // when something went wrong store it for later execution
                     distributedTaskQueue.workerStoreError(task.getId(), e);
                 }
-//                distributedTaskQueue.checkChainedTasks(task.getId());
                 distributedTaskQueue.checkChainedTasksViaResults();
                 distributedTaskQueue.workerEndOnTask(task);
             } catch (Exception e) {
                 log.warn(e.getMessage(), e);
             } finally {
-                if (task != null) distributedTaskQueue.workerPublishDone(task.getId());
+                if (task != null) distributedTaskQueue.workerFinallyDoneAndCleanup(task.getId());
             }
         }
     }

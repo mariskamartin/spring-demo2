@@ -6,5 +6,5 @@ public interface IDistributedTask extends Serializable {
     String getId();
     long getCreatedTime();
     byte getPriority();
-    Object call(DistributedTaskQueue distributedTaskQueue);
+    Object call(IDistributedTaskQueue distributedTaskQueue);
 }

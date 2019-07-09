@@ -25,9 +25,9 @@ public abstract class AbstractChainedDistributedTask extends AbstractDistributed
     }
 
     @Override
-    public Object call(DistributedTaskQueue distributedTaskQueue) {
+    public Object call(IDistributedTaskQueue distributedTaskQueue) {
         return call(distributedTaskQueue, results);
     }
 
-    public abstract Object call(DistributedTaskQueue distributedTaskQueue, Map<String, Object> results);
+    public abstract Object call(IDistributedTaskQueue distributedTaskQueue, Map<String, Object> results);
 }

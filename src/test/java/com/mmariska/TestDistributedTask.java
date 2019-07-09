@@ -1,7 +1,7 @@
 package com.mmariska;
 
 import com.mmariska.springdemo2.distributedTaskQueue.AbstractDistributedTask;
-import com.mmariska.springdemo2.distributedTaskQueue.DistributedTaskQueue;
+import com.mmariska.springdemo2.distributedTaskQueue.IDistributedTaskQueue;
 
 public class TestDistributedTask extends AbstractDistributedTask {
 
@@ -17,7 +17,7 @@ public class TestDistributedTask extends AbstractDistributedTask {
     }
 
     @Override
-    public Object call(DistributedTaskQueue distributedTaskQueue) {
+    public Object call(IDistributedTaskQueue distributedTaskQueue) {
         return this.result;
     }
 
