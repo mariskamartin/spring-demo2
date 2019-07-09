@@ -181,12 +181,10 @@ public class DistributedTaskQueueTest {
 
     @Test
     public void testExecutionInOrderOfTaskWithChain() throws ExecutionException, InterruptedException, TimeoutException {
-        IDistributedTask task1 = new TestDistributedTask(1,"task1-");
+        IDistributedTask task1 = new TestDistributedTask(1,"task1-"); Thread.sleep(5);
         TestAggregatedDistributedTask taskAggCreatedAfterTask1 = new TestAggregatedDistributedTask(task1.getId());
-        Thread.sleep(2);
-        IDistributedTask task2 = new TestDistributedTask(1,"task2-");
-        Thread.sleep(2);
-        IDistributedTask task3 = new TestDistributedTask(1,"task3-");
+        IDistributedTask task2 = new TestDistributedTask(1,"task2-"); Thread.sleep(5);
+        IDistributedTask task3 = new TestDistributedTask(1,"task3-");  Thread.sleep(5);
         CompletableFuture<Object> futureAggTask = distributedTaskQueue.offerChain(taskAggCreatedAfterTask1);
         distributedTaskQueue.offer(task1);
         distributedTaskQueue.offer(task2);
@@ -195,27 +193,29 @@ public class DistributedTaskQueueTest {
         List<String> doneTasks = new LinkedList<>();
         distributedTaskQueue.subscribeListenerOnDoneTask((channel, doneTaskId) -> doneTasks.add(doneTaskId));
         distributedTaskQueue.startLocalWorker();
-        assertEquals(1L, futureTask3.get()) ;
         assertEquals(1L, futureAggTask.get()) ;
+        assertEquals(1L, futureTask3.get()) ;
         assertEquals(Arrays.asList(task1.getId(), taskAggCreatedAfterTask1.getId(), task2.getId(), task3.getId()), doneTasks) ;
     }
 
 
     @Test
     public void testPriorityOrderOfTask() throws ExecutionException, InterruptedException, TimeoutException {
-        IDistributedTask task1 = new ExampleSimpleTask();
-        IDistributedTask task2 = new HighPriorityExampleSimpleTask();
-        IDistributedTask task3 = new ExampleSimpleTask();
-        IDistributedTask task4 = new HighPriorityExampleSimpleTask();
-        IDistributedTask task5 = new ExampleSimpleTask();
+        IDistributedTask task1 = new ExampleSimpleTask(); Thread.sleep(2);
+        IDistributedTask task2 = new HighPriorityExampleSimpleTask(); Thread.sleep(2);
+        IDistributedTask task3 = new ExampleSimpleTask(); Thread.sleep(2);
+        IDistributedTask task4 = new HighPriorityExampleSimpleTask(); Thread.sleep(2);
+        IDistributedTask task5 = new ExampleSimpleTask(); Thread.sleep(2);
         distributedTaskQueue.offer(task1);
         distributedTaskQueue.offer(task2);
         distributedTaskQueue.offer(task3);
         distributedTaskQueue.offer(task4);
         distributedTaskQueue.offer(task5);
         IDistributedTask iDistributedTask = distributedTaskQueue.workerPoolLastTaskBlocking();
+        assertEquals(task2.getId(), iDistributedTask.getId());
+        iDistributedTask = distributedTaskQueue.workerPoolLastTaskBlocking();
         assertEquals(task4.getId(), iDistributedTask.getId());
         iDistributedTask = distributedTaskQueue.workerPoolLastTaskBlocking();
-        assertEquals(task2.getId(), iDistributedTask.getId());
+        assertEquals(task1.getId(), iDistributedTask.getId());
     }
 }
