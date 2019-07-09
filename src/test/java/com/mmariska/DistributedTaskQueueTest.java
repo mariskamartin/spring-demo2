@@ -195,6 +195,7 @@ public class DistributedTaskQueueTest {
         distributedTaskQueue.startLocalWorker();
         assertEquals(1L, futureAggTask.get()) ;
         assertEquals(1L, futureTask3.get()) ;
+        System.out.println("doneTasks = " + doneTasks);
         assertEquals(Arrays.asList(task1.getId(), taskAggCreatedAfterTask1.getId(), task2.getId(), task3.getId()), doneTasks) ;
     }
 
